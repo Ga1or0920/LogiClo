@@ -62,7 +62,10 @@ fun ClosetEditorScreen(
 ) {
     val appContainer = LocalAppContainer.current
     val viewModel: ClosetEditorViewModel = viewModel(
-        factory = ClosetEditorViewModel.Factory(appContainer.closetRepository)
+        factory = ClosetEditorViewModel.Factory(
+            closetRepository = appContainer.closetRepository,
+            userPreferencesRepository = appContainer.userPreferencesRepository
+        )
     )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 

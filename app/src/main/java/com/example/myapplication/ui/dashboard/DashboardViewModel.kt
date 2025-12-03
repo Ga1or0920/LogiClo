@@ -15,12 +15,15 @@ import com.example.myapplication.domain.model.LaundryStatus
 import com.example.myapplication.domain.model.EnvironmentMode
 import com.example.myapplication.domain.model.TpoMode
 import com.example.myapplication.domain.model.WeatherSnapshot
+import com.example.myapplication.domain.model.UserPreferences
 import com.example.myapplication.domain.model.formatClothingDisplayLabel
 import com.example.myapplication.domain.usecase.ApplyWearUseCase
 import com.example.myapplication.domain.usecase.ApplyWearUseCase.WearReason
 import com.example.myapplication.domain.usecase.FormalScoreCalculator
 import com.example.myapplication.domain.usecase.WeatherSuitabilityEvaluator
+import com.example.myapplication.util.time.InstantCompat
 import java.time.Instant
+import java.util.Locale
 import com.example.myapplication.ui.dashboard.model.AlertSeverity
 import com.example.myapplication.ui.dashboard.model.DashboardUiState
 import com.example.myapplication.ui.dashboard.model.InventoryAlert
@@ -37,6 +40,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlin.collections.buildList
 
 class DashboardViewModel(
     private val closetRepository: ClosetRepository,
@@ -54,6 +58,7 @@ class DashboardViewModel(
     private val selectionState = MutableStateFlow<Pair<String, String>?>(null)
     private val weatherStatus = MutableStateFlow(WeatherRefreshStatus())
     private var suggestionCache: List<OutfitSuggestion> = emptyList()
+    private val reviewDialogState = MutableStateFlow(false)
 
     private val _toastEvents = MutableSharedFlow<List<UiMessage>>(extraBufferCapacity = 1)
     val toastEvents = _toastEvents.asSharedFlow()
@@ -69,8 +74,17 @@ class DashboardViewModel(
                 userPreferencesRepository.observe(),
                 closetRepository.observeAll(),
                 weatherRepository.observeCurrentWeather(),
-                weatherStatus
-            ) { preferences, items, weather, weatherStatus ->
+                weatherStatus,
+                selectionState
+            ) { preferences, items, weather, weatherStatus, selectedPair ->
+                CombinedInputs(preferences, items, weather, weatherStatus, selectedPair)
+            }.combine(reviewDialogState) { inputs, reviewVisible ->
+                val preferences = inputs.preferences
+                val items = inputs.items
+                val weather = inputs.weather
+                val weatherStatus = inputs.weatherStatus
+                val selectedPair = inputs.selectedPair
+
                 val mode = preferences.lastSelectedMode.takeUnless { it == TpoMode.UNKNOWN } ?: TpoMode.CASUAL
                 val environment = preferences.lastSelectedEnvironment.takeUnless { it == EnvironmentMode.UNKNOWN }
                     ?: EnvironmentMode.OUTDOOR
@@ -89,7 +103,6 @@ class DashboardViewModel(
                 suggestionCache = suggestions
                 val totalSuggestionCount = suggestions.size
                 val alert = buildInventoryAlert(mode, totalSuggestionCount)
-                val selectedPair = selectionState.value
                 val resolvedSelectionPair = when {
                     selectedPair != null && suggestions.any { it.pairIds == selectedPair } -> selectedPair
                     suggestions.isNotEmpty() -> suggestions.first().pairIds
@@ -101,13 +114,27 @@ class DashboardViewModel(
 
                 val selectedSuggestion = suggestions.firstOrNull { it.pairIds == resolvedSelectionPair }
                     ?: suggestions.firstOrNull()
-                val visibleSuggestions = selectedSuggestion?.let { listOf(it) } ?: emptyList()
+                val previewSuggestions = selectedSuggestion?.let { listOf(it) } ?: emptyList()
+                val insights = selectedSuggestion?.let { suggestion ->
+                    buildSelectionInsights(
+                        suggestion = suggestion,
+                        mode = mode,
+                        environment = environment,
+                        comfortMin = targetMinTemp,
+                        comfortMax = targetMaxTemp,
+                        weather = weather,
+                        disallowVividPair = preferences.colorRules.disallowVividPair,
+                        allowBlackNavy = preferences.colorRules.allowBlackNavy
+                    )
+                } ?: emptyList()
+
+                val reviewMessages = buildInventoryReviewMessages(alert, suggestionResult.recommendations)
 
                 DashboardUiState(
                     isLoading = false,
                     mode = mode,
                     environment = environment,
-                    suggestions = visibleSuggestions,
+                    suggestions = previewSuggestions,
                     alert = alert,
                     weather = weather,
                     selectedSuggestion = selectedSuggestion,
@@ -115,7 +142,10 @@ class DashboardViewModel(
                     lastWeatherUpdatedAt = weather.updatedAt ?: weatherStatus.lastUpdated,
                     weatherErrorMessage = weatherStatus.errorMessage,
                     purchaseRecommendations = suggestionResult.recommendations,
-                    totalSuggestionCount = totalSuggestionCount
+                    totalSuggestionCount = totalSuggestionCount,
+                    selectionInsights = insights,
+                    inventoryReviewMessages = reviewMessages,
+                    isInventoryReviewVisible = reviewVisible && reviewMessages.isNotEmpty()
                 )
             }.collect { state ->
                 _uiState.value = state
@@ -131,7 +161,7 @@ class DashboardViewModel(
                 weatherRepository.refresh()
                 weatherStatus.value = WeatherRefreshStatus(
                     isRefreshing = false,
-                    lastUpdated = Instant.now(),
+                    lastUpdated = InstantCompat.nowOrNull(),
                     errorMessage = null
                 )
             } catch (t: Throwable) {
@@ -205,11 +235,7 @@ class DashboardViewModel(
             return SuggestionResult(emptyList(), recommendations.distinct())
         }
 
-        val scoreRange = when (mode) {
-            TpoMode.CASUAL -> 0..6
-            TpoMode.OFFICE -> 7..14
-            else -> 0..10
-        }
+        val scoreRange = resolveScoreRange(mode)
 
         val suggestions = mutableListOf<OutfitSuggestion>()
         var filteredByColor = false
@@ -288,6 +314,79 @@ class DashboardViewModel(
 
         return SuggestionResult(emptyList(), recommendations.distinct())
     }
+
+    private fun buildSelectionInsights(
+        suggestion: OutfitSuggestion,
+        mode: TpoMode,
+        environment: EnvironmentMode,
+        comfortMin: Double,
+        comfortMax: Double,
+        weather: WeatherSnapshot,
+        disallowVividPair: Boolean,
+        allowBlackNavy: Boolean
+    ): List<UiMessage> {
+        val insights = mutableListOf<UiMessage>()
+        val modeLabel = stringResolver(mode.toLabelResId())
+        val scoreRangeLabel = formatScoreRange(resolveScoreRange(mode))
+        insights += UiMessage(
+            resId = R.string.dashboard_insight_mode,
+            args = listOf(
+                UiMessageArg.Raw(modeLabel),
+                UiMessageArg.Raw(scoreRangeLabel),
+                UiMessageArg.Raw(suggestion.totalScore)
+            )
+        )
+
+        val environmentLabel = stringResolver(environment.toLabelResId())
+        insights += UiMessage(
+            resId = R.string.dashboard_insight_weather,
+            args = listOf(
+                UiMessageArg.Raw(formatTemperature(comfortMin)),
+                UiMessageArg.Raw(formatTemperature(comfortMax)),
+                UiMessageArg.Raw(formatTemperature(weather.minTemperatureCelsius)),
+                UiMessageArg.Raw(formatTemperature(weather.maxTemperatureCelsius)),
+                UiMessageArg.Raw(weather.humidityPercent),
+                UiMessageArg.Raw(environmentLabel)
+            )
+        )
+
+        val colorRuleLabels = mutableListOf<String>()
+        if (disallowVividPair) {
+            colorRuleLabels += stringResolver(R.string.dashboard_insight_color_rule_disallow_vivid)
+        }
+        if (allowBlackNavy) {
+            colorRuleLabels += stringResolver(R.string.dashboard_insight_color_rule_allow_black_navy)
+        }
+        val colorRulesText = colorRuleLabels.takeIf { it.isNotEmpty() }
+            ?.joinToString(separator = " / ")
+            ?: stringResolver(R.string.dashboard_insight_color_rules_none)
+        insights += UiMessage(
+            resId = R.string.dashboard_insight_color_rules,
+            args = listOf(UiMessageArg.Raw(colorRulesText))
+        )
+
+        return insights
+    }
+
+    private fun buildInventoryReviewMessages(
+        alert: InventoryAlert?,
+        recommendations: List<UiMessage>
+    ): List<UiMessage> {
+        val messages = mutableListOf<UiMessage>()
+        alert?.message?.let(messages::add)
+        messages += recommendations
+        return messages.distinct()
+    }
+
+    private fun resolveScoreRange(mode: TpoMode): IntRange = when (mode) {
+        TpoMode.CASUAL -> 0..6
+        TpoMode.OFFICE -> 7..14
+        else -> 0..10
+    }
+
+    private fun formatScoreRange(range: IntRange): String = "${range.first}~${range.last}"
+
+    private fun formatTemperature(value: Double): String = String.format(Locale.JAPAN, "%.1f", value)
 
     private fun resolveComfortRange(
         environment: EnvironmentMode,
@@ -402,14 +501,24 @@ class DashboardViewModel(
         }
     }
 
+    fun onEnvironmentSelected(environment: EnvironmentMode) {
+        if (_uiState.value.environment == environment) return
+        viewModelScope.launch {
+            userPreferencesRepository.updateLastSelectedEnvironment(environment)
+        }
+    }
+
     fun onSuggestionSelected(outfit: OutfitSuggestion) {
         selectionState.value = outfit.pairIds
-        _uiState.update { current ->
-            current.copy(
-                selectedSuggestion = outfit,
-                suggestions = listOf(outfit)
-            )
-        }
+    }
+
+    fun onReviewInventoryRequested() {
+        if (_uiState.value.inventoryReviewMessages.isEmpty()) return
+        reviewDialogState.value = true
+    }
+
+    fun onReviewInventoryDismissed() {
+        reviewDialogState.value = false
     }
 
     fun rerollSuggestion() {
@@ -421,12 +530,6 @@ class DashboardViewModel(
             .randomOrNull()
             ?: suggestions.first()
         selectionState.value = nextSuggestion.pairIds
-        _uiState.update { current ->
-            current.copy(
-                selectedSuggestion = nextSuggestion,
-                suggestions = listOf(nextSuggestion)
-            )
-        }
     }
 
     fun onWearSelected() {
@@ -477,6 +580,14 @@ private data class SuggestionResult(
     val recommendations: List<UiMessage>
 )
 
+private data class CombinedInputs(
+    val preferences: UserPreferences,
+    val items: List<ClothingItem>,
+    val weather: WeatherSnapshot,
+    val weatherStatus: WeatherRefreshStatus,
+    val selectedPair: Pair<String, String>?
+)
+
 private val OutfitSuggestion.pairIds: Pair<String, String>
     get() = top.id to bottom.id
 
@@ -491,6 +602,12 @@ private fun TpoMode.toLabelResId(): Int = when (this) {
     TpoMode.CASUAL -> R.string.dashboard_mode_casual
     TpoMode.OFFICE -> R.string.dashboard_mode_office
     TpoMode.UNKNOWN -> R.string.dashboard_mode_unknown
+}
+
+private fun EnvironmentMode.toLabelResId(): Int = when (this) {
+    EnvironmentMode.OUTDOOR -> R.string.dashboard_environment_outdoor
+    EnvironmentMode.INDOOR -> R.string.dashboard_environment_indoor
+    EnvironmentMode.UNKNOWN -> R.string.dashboard_environment_outdoor
 }
 
 private fun ApplyWearUseCase.WearOutcome.toUiMessage(

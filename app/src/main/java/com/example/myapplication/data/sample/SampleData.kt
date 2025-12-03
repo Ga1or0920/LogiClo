@@ -11,14 +11,13 @@ import com.example.myapplication.domain.model.SleeveLength
 import com.example.myapplication.domain.model.Thickness
 import com.example.myapplication.domain.model.TpoMode
 import com.example.myapplication.domain.model.UserPreferences
-import com.example.myapplication.domain.model.WeatherSnapshot
 import com.example.myapplication.domain.model.EnvironmentMode
-import java.time.Instant
+import com.example.myapplication.domain.model.WeatherSnapshot
 
 object SampleData {
 
     val defaultUserPreferences: UserPreferences = UserPreferences(
-        lastLogin = Instant.now(),
+        lastLogin = null,
         lastSelectedMode = TpoMode.OFFICE,
         lastSelectedEnvironment = EnvironmentMode.OUTDOOR,
         tempOffsets = mapOf(
@@ -52,7 +51,7 @@ object SampleData {
             cleaningType = CleaningType.HOME,
             status = LaundryStatus.CLOSET,
             imageUrl = null,
-            lastWornDate = Instant.now().minusSeconds(86_400)
+            lastWornDate = null
         ),
         ClothingItem(
             id = "item-002",
@@ -70,7 +69,7 @@ object SampleData {
             cleaningType = CleaningType.HOME,
             status = LaundryStatus.CLOSET,
             imageUrl = null,
-            lastWornDate = Instant.now().minusSeconds(172_800)
+            lastWornDate = null
         ),
         ClothingItem(
             id = "item-003",
@@ -88,7 +87,7 @@ object SampleData {
             cleaningType = CleaningType.HOME,
             status = LaundryStatus.DIRTY,
             imageUrl = null,
-            lastWornDate = Instant.now().minusSeconds(43_200)
+            lastWornDate = null
         ),
         ClothingItem(
             id = "item-004",
@@ -106,7 +105,7 @@ object SampleData {
             cleaningType = CleaningType.HOME,
             status = LaundryStatus.CLOSET,
             imageUrl = null,
-            lastWornDate = Instant.now().minusSeconds(259_200)
+            lastWornDate = null
         ),
         ClothingItem(
             id = "item-005",
@@ -124,7 +123,7 @@ object SampleData {
             cleaningType = CleaningType.DRY,
             status = LaundryStatus.CLEANING,
             imageUrl = null,
-            lastWornDate = Instant.now().minusSeconds(604_800)
+            lastWornDate = null
         )
     )
 
@@ -132,6 +131,6 @@ object SampleData {
         minTemperatureCelsius = 18.0,
         maxTemperatureCelsius = 27.0,
         humidityPercent = 65,
-        updatedAt = Instant.now()
+        updatedAt = null
     )
 }

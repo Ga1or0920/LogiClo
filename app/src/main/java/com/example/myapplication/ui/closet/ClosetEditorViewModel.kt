@@ -3,8 +3,9 @@ package com.example.myapplication.ui.closet
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.example.myapplication.data.repository.ClosetRepository
 import com.example.myapplication.R
+import com.example.myapplication.data.repository.ClosetRepository
+import com.example.myapplication.data.repository.UserPreferencesRepository
 import com.example.myapplication.domain.model.CleaningType
 import com.example.myapplication.domain.model.ClothingCategory
 import com.example.myapplication.domain.model.ClothingItem
@@ -22,17 +23,20 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
 private const val MIN_WEAR_COUNT = 2
 private const val MAX_WEAR_COUNT = 30
 
 class ClosetEditorViewModel(
-    private val closetRepository: ClosetRepository
+    private val closetRepository: ClosetRepository,
+    private val userPreferencesRepository: UserPreferencesRepository
 ) : ViewModel() {
 
     private val categoryOptions = closetCategoryOptions()
     private val colorOptions = closetColorOptions()
+    private var learnedDefaultMaxWears: Map<ClothingCategory, Int> = emptyMap()
 
     private val _uiState = MutableStateFlow(
         ClosetEditorUiState(
@@ -42,6 +46,14 @@ class ClosetEditorViewModel(
     )
     val uiState: StateFlow<ClosetEditorUiState> = _uiState.asStateFlow()
 
+    init {
+        viewModelScope.launch {
+            userPreferencesRepository.observe().collect { preferences ->
+                learnedDefaultMaxWears = preferences.defaultMaxWears
+            }
+        }
+    }
+
     fun onNameChanged(value: String) {
         _uiState.update { state ->
             state.copy(name = value)
@@ -50,14 +62,16 @@ class ClosetEditorViewModel(
 
     fun onCategorySelected(option: CategoryOption) {
         _uiState.update { state ->
+            val initialAlwaysWash = resolveInitialAlwaysWash(option)
+            val initialMaxWears = if (initialAlwaysWash) 1 else resolveBaseMaxWears(option)
             state.copy(
                 selectedCategory = option,
                 type = option.type,
                 sleeveLength = option.defaultSleeve,
                 thickness = option.defaultThickness,
                 cleaningType = option.defaultCleaning,
-                isAlwaysWash = option.defaultAlwaysWash,
-                maxWears = if (option.defaultAlwaysWash) 1 else option.defaultMaxWears
+                isAlwaysWash = initialAlwaysWash,
+                maxWears = initialMaxWears
             )
         }
     }
@@ -70,10 +84,9 @@ class ClosetEditorViewModel(
 
     fun onAlwaysWashChanged(isAlwaysWash: Boolean) {
         _uiState.update { state ->
-            val baseMax = state.selectedCategory?.defaultMaxWears ?: MIN_WEAR_COUNT
             state.copy(
                 isAlwaysWash = isAlwaysWash,
-                maxWears = if (isAlwaysWash) 1 else baseMax.coerceIn(MIN_WEAR_COUNT, MAX_WEAR_COUNT)
+                maxWears = if (isAlwaysWash) 1 else resolveBaseMaxWears(state.selectedCategory)
             )
         }
     }
@@ -99,6 +112,11 @@ class ClosetEditorViewModel(
         viewModelScope.launch {
             val item = buildClothingItem(current)
             closetRepository.upsert(item)
+            userPreferencesRepository.update { preferences ->
+                val updatedDefaults = preferences.defaultMaxWears.toMutableMap()
+                updatedDefaults[item.category] = if (item.isAlwaysWash) 1 else item.maxWears
+                preferences.copy(defaultMaxWears = updatedDefaults)
+            }
             _uiState.update { state ->
                 state.copy(isSaving = false, saveCompleted = true)
             }
@@ -109,6 +127,19 @@ class ClosetEditorViewModel(
         _uiState.update { state ->
             if (state.saveCompleted) state.copy(saveCompleted = false) else state
         }
+    }
+
+    private fun resolveInitialAlwaysWash(option: CategoryOption): Boolean {
+        val learned = learnedDefaultMaxWears[option.category]
+        return option.defaultAlwaysWash || (learned ?: option.defaultMaxWears) <= 1
+    }
+
+    private fun resolveBaseMaxWears(option: CategoryOption?): Int {
+        if (option == null) return MIN_WEAR_COUNT
+        val learned = learnedDefaultMaxWears[option.category]
+        val fallback = option.defaultMaxWears
+        val target = learned ?: fallback
+        return target.coerceIn(MIN_WEAR_COUNT, MAX_WEAR_COUNT)
     }
 
     private fun buildClothingItem(state: ClosetEditorUiState): ClothingItem {
@@ -140,12 +171,16 @@ class ClosetEditorViewModel(
     }
 
     class Factory(
-        private val closetRepository: ClosetRepository
+        private val closetRepository: ClosetRepository,
+        private val userPreferencesRepository: UserPreferencesRepository
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             if (modelClass.isAssignableFrom(ClosetEditorViewModel::class.java)) {
-                return ClosetEditorViewModel(closetRepository) as T
+                return ClosetEditorViewModel(
+                    closetRepository = closetRepository,
+                    userPreferencesRepository = userPreferencesRepository
+                ) as T
             }
             throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
         }

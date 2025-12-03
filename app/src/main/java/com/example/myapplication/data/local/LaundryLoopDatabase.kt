@@ -11,7 +11,7 @@ import com.example.myapplication.data.local.entity.UserPreferencesEntity
 
 @Database(
     entities = [ClothingItemEntity::class, UserPreferencesEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class LaundryLoopDatabase : RoomDatabase() {
@@ -25,6 +25,14 @@ abstract class LaundryLoopDatabase : RoomDatabase() {
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.execSQL(
                     "ALTER TABLE user_preferences ADD COLUMN lastSelectedEnvironment TEXT NOT NULL DEFAULT 'outdoor'"
+                )
+            }
+        }
+
+        val MIGRATION_2_3: Migration = object : Migration(2, 3) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "ALTER TABLE user_preferences ADD COLUMN defaultMaxWearsJson TEXT NOT NULL DEFAULT '{}'"
                 )
             }
         }

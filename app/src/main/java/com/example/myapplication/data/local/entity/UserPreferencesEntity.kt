@@ -5,8 +5,10 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 import com.example.myapplication.domain.model.ColorRules
 import com.example.myapplication.domain.model.EnvironmentMode
+import com.example.myapplication.domain.model.ClothingCategory
 import com.example.myapplication.domain.model.TpoMode
 import com.example.myapplication.domain.model.UserPreferences
+import com.example.myapplication.util.time.InstantCompat
 import java.time.Instant
 
 @Entity(tableName = "user_preferences")
@@ -16,7 +18,8 @@ data class UserPreferencesEntity(
     val lastSelectedMode: String,
     @ColumnInfo(defaultValue = "outdoor") val lastSelectedEnvironment: String,
     val allowBlackNavy: Boolean,
-    val disallowVividPair: Boolean
+    val disallowVividPair: Boolean,
+    @ColumnInfo(defaultValue = "{}") val defaultMaxWearsJson: String
 ) {
     companion object {
         const val SINGLETON_ID: Int = 0
@@ -24,7 +27,7 @@ data class UserPreferencesEntity(
 }
 
 fun UserPreferencesEntity.toDomain(): UserPreferences = UserPreferences(
-    lastLogin = lastLoginEpochMillis?.let(Instant::ofEpochMilli),
+    lastLogin = InstantCompat.ofEpochMilliOrNull(lastLoginEpochMillis),
     lastSelectedMode = TpoMode.fromBackend(lastSelectedMode),
     lastSelectedEnvironment = EnvironmentMode.fromBackend(lastSelectedEnvironment),
     tempOffsets = emptyMap(),
@@ -32,13 +35,37 @@ fun UserPreferencesEntity.toDomain(): UserPreferences = UserPreferences(
         allowBlackNavy = allowBlackNavy,
         disallowVividPair = disallowVividPair
     ),
-    defaultMaxWears = emptyMap()
+    defaultMaxWears = parseDefaultMaxWears(defaultMaxWearsJson)
 )
 
 fun UserPreferences.toEntity(): UserPreferencesEntity = UserPreferencesEntity(
-    lastLoginEpochMillis = lastLogin?.toEpochMilli(),
+    lastLoginEpochMillis = InstantCompat.toEpochMilliOrNull(lastLogin),
     lastSelectedMode = lastSelectedMode.backendValue,
     lastSelectedEnvironment = lastSelectedEnvironment.backendValue,
     allowBlackNavy = colorRules.allowBlackNavy,
-    disallowVividPair = colorRules.disallowVividPair
+    disallowVividPair = colorRules.disallowVividPair,
+    defaultMaxWearsJson = encodeDefaultMaxWears(defaultMaxWears)
 )
+
+private fun parseDefaultMaxWears(raw: String?): Map<ClothingCategory, Int> {
+    if (raw.isNullOrBlank() || raw == "{}") return emptyMap()
+    return raw.split(ENTRY_DELIMITER)
+        .mapNotNull { entry ->
+            val parts = entry.split(KEY_VALUE_DELIMITER)
+            if (parts.size != 2) return@mapNotNull null
+            val category = ClothingCategory.fromBackend(parts[0])
+            if (category == ClothingCategory.UNKNOWN) return@mapNotNull null
+            val value = parts[1].toIntOrNull() ?: return@mapNotNull null
+            category to value
+        }.toMap()
+}
+
+private fun encodeDefaultMaxWears(values: Map<ClothingCategory, Int>): String {
+    if (values.isEmpty()) return "{}"
+    return values.entries.joinToString(separator = ENTRY_DELIMITER) { (category, max) ->
+        "${category.backendValue}$KEY_VALUE_DELIMITER$max"
+    }
+}
+
+private const val ENTRY_DELIMITER = ";"
+private const val KEY_VALUE_DELIMITER = ":"

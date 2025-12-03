@@ -39,7 +39,10 @@ class DefaultAppContainer(
         context,
         LaundryLoopDatabase::class.java,
         LaundryLoopDatabase.NAME
-    ).addMigrations(LaundryLoopDatabase.MIGRATION_1_2)
+    ).addMigrations(
+        LaundryLoopDatabase.MIGRATION_1_2,
+        LaundryLoopDatabase.MIGRATION_2_3
+    )
         .build()
 
     override val closetRepository: ClosetRepository = RoomClosetRepository(database.clothingItemDao())

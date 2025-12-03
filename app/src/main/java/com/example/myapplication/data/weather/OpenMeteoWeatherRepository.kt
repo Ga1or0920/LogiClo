@@ -2,6 +2,7 @@ package com.example.myapplication.data.weather
 
 import android.util.Log
 import com.example.myapplication.domain.model.WeatherSnapshot
+import com.example.myapplication.util.time.InstantCompat
 import java.net.HttpURLConnection
 import java.net.URL
 import java.time.Instant
@@ -73,7 +74,7 @@ class OpenMeteoWeatherRepository(
         val maxTemp = daily?.optJSONArray("temperature_2m_max")?.optDouble(0) ?: state.value.maxTemperatureCelsius
         val humidityArray = hourly?.optJSONArray("relative_humidity_2m")
         val humidity = humidityArray?.optDouble(0)?.toInt() ?: state.value.humidityPercent
-        val updatedAt = parseUpdatedAt(json) ?: Instant.now()
+        val updatedAt = parseUpdatedAt(json) ?: InstantCompat.nowOrNull()
         return WeatherSnapshot(
             minTemperatureCelsius = minTemp,
             maxTemperatureCelsius = maxTemp,
