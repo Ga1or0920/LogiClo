@@ -27,6 +27,8 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -38,6 +40,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import com.example.myapplication.util.time.InstantCompat
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.width
@@ -58,6 +62,9 @@ import com.example.myapplication.ui.dashboard.model.AlertSeverity
 import com.example.myapplication.ui.dashboard.model.DashboardUiState
 import com.example.myapplication.ui.dashboard.model.InventoryAlert
 import com.example.myapplication.ui.dashboard.model.OutfitSuggestion
+import com.example.myapplication.ui.dashboard.model.ClockDebugUiState
+import com.example.myapplication.ui.dashboard.model.WeatherDebugUiState
+import com.example.myapplication.ui.dashboard.model.WearFeedbackDebugUiState
 import com.example.myapplication.ui.providers.LocalAppContainer
 import com.example.myapplication.ui.theme.MyApplicationTheme
 import java.time.Instant
@@ -75,6 +82,8 @@ fun DashboardScreen(modifier: Modifier = Modifier) {
             closetRepository = appContainer.closetRepository,
             userPreferencesRepository = appContainer.userPreferencesRepository,
             weatherRepository = appContainer.weatherRepository,
+            weatherDebugController = appContainer.weatherDebugController,
+            clockDebugController = appContainer.clockDebugController,
             stringResolver = context::getString
         )
     )
@@ -99,6 +108,12 @@ fun DashboardScreen(modifier: Modifier = Modifier) {
         onReviewInventory = viewModel::onReviewInventoryRequested,
         onDismissReviewInventory = viewModel::onReviewInventoryDismissed,
         onRefreshWeather = viewModel::refreshWeather,
+        onClockDebugNextDayChanged = viewModel::onClockDebugNextDayChanged,
+        onDebugMinTempChanged = viewModel::onDebugMinTemperatureChanged,
+        onDebugMaxTempChanged = viewModel::onDebugMaxTemperatureChanged,
+        onDebugHumidityChanged = viewModel::onDebugHumidityChanged,
+        onApplyWeatherDebug = viewModel::applyWeatherDebugOverride,
+        onClearWeatherDebug = viewModel::clearWeatherDebugOverride,
         modifier = modifier
     )
 }
@@ -114,6 +129,12 @@ private fun DashboardContent(
     onReviewInventory: () -> Unit,
     onDismissReviewInventory: () -> Unit,
     onRefreshWeather: () -> Unit,
+    onClockDebugNextDayChanged: (Boolean) -> Unit,
+    onDebugMinTempChanged: (String) -> Unit,
+    onDebugMaxTempChanged: (String) -> Unit,
+    onDebugHumidityChanged: (String) -> Unit,
+    onApplyWeatherDebug: () -> Unit,
+    onClearWeatherDebug: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     LazyColumn(
@@ -151,6 +172,34 @@ private fun DashboardContent(
                     errorMessage = state.weatherErrorMessage,
                     onRefresh = onRefreshWeather
                 )
+            }
+        }
+
+        state.weatherDebug?.let { debugState ->
+            item {
+                WeatherDebugCard(
+                    state = debugState,
+                    onMinTempChanged = onDebugMinTempChanged,
+                    onMaxTempChanged = onDebugMaxTempChanged,
+                    onHumidityChanged = onDebugHumidityChanged,
+                    onApply = onApplyWeatherDebug,
+                    onClear = onClearWeatherDebug
+                )
+            }
+        }
+
+        state.clockDebug?.let { clockState ->
+            item {
+                ClockDebugCard(
+                    state = clockState,
+                    onToggleNextDay = onClockDebugNextDayChanged
+                )
+            }
+        }
+
+        state.wearFeedbackDebug?.let { feedbackState ->
+            item {
+                WearFeedbackDebugCard(state = feedbackState)
             }
         }
 
@@ -422,6 +471,189 @@ private fun WeatherCard(
 }
 
 @Composable
+private fun WeatherDebugCard(
+    state: WeatherDebugUiState,
+    onMinTempChanged: (String) -> Unit,
+    onMaxTempChanged: (String) -> Unit,
+    onHumidityChanged: (String) -> Unit,
+    onApply: () -> Unit,
+    onClear: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = stringResource(id = R.string.debug_weather_title),
+                style = MaterialTheme.typography.titleMedium
+            )
+            OutlinedTextField(
+                value = state.minTemperatureInput,
+                onValueChange = onMinTempChanged,
+                label = { Text(stringResource(id = R.string.debug_weather_min_label)) },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = state.maxTemperatureInput,
+                onValueChange = onMaxTempChanged,
+                label = { Text(stringResource(id = R.string.debug_weather_max_label)) },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = state.humidityInput,
+                onValueChange = onHumidityChanged,
+                label = { Text(stringResource(id = R.string.debug_weather_humidity_label)) },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth()
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Button(onClick = onApply) {
+                    Text(text = stringResource(id = R.string.debug_weather_apply))
+                }
+                OutlinedButton(
+                    onClick = onClear,
+                    enabled = state.isOverrideActive
+                ) {
+                    Text(text = stringResource(id = R.string.debug_weather_clear))
+                }
+            }
+            if (state.isOverrideActive) {
+                Text(
+                    text = stringResource(id = R.string.debug_weather_active),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+            state.lastAppliedAt?.let { instant ->
+                val label = formatWeatherTimestamp(instant)
+                Text(
+                    text = stringResource(id = R.string.debug_weather_last_applied, label),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            state.errorMessage?.let { message ->
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ClockDebugCard(
+    state: ClockDebugUiState,
+    onToggleNextDay: (Boolean) -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = stringResource(id = R.string.debug_clock_title),
+                style = MaterialTheme.typography.titleMedium
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = stringResource(id = R.string.debug_clock_next_day_label),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        text = stringResource(id = R.string.debug_clock_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = state.isNextDayEnabled,
+                    onCheckedChange = onToggleNextDay
+                )
+            }
+            if (state.isNextDayEnabled) {
+                Text(
+                    text = stringResource(id = R.string.debug_clock_active),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+            state.lastAppliedAt?.let { instant ->
+                val label = formatWeatherTimestamp(instant)
+                Text(
+                    text = stringResource(id = R.string.debug_clock_last_applied, label),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun WearFeedbackDebugCard(state: WearFeedbackDebugUiState) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = stringResource(id = R.string.debug_feedback_title),
+                style = MaterialTheme.typography.titleMedium
+            )
+            state.lastUpdatedAt?.let { instant ->
+                Text(
+                    text = stringResource(id = R.string.debug_feedback_last_updated, formatWeatherTimestamp(instant)),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (state.messages.isEmpty()) {
+                Text(
+                    text = stringResource(id = R.string.debug_feedback_empty),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    state.messages.forEach { message ->
+                        Text(
+                            text = "• ${message.resolve()}",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun PurchaseRecommendationList(
     recommendations: List<UiMessage>,
     modifier: Modifier = Modifier
@@ -537,7 +769,7 @@ private fun SuggestionItemPreview(label: String, item: ClothingItem) {
             swatchSize = 72.dp,
             iconSize = 48.dp
         )
-        Column(modifier = Modifier.weight(1f)) {
+        Column {
             Text(text = label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(text = item.name, style = MaterialTheme.typography.titleMedium)
             Text(
@@ -623,6 +855,19 @@ private fun DashboardScreenPreview() {
         androidx.compose.runtime.CompositionLocalProvider(
             LocalAppContainer provides container
         ) {
+            val weatherDebugState = WeatherDebugUiState(
+                minTemperatureInput = "18.0",
+                maxTemperatureInput = "27.0",
+                humidityInput = "65",
+                isOverrideActive = false
+            )
+            val clockDebugState = ClockDebugUiState(isNextDayEnabled = false)
+            val feedbackDebugState = WearFeedbackDebugUiState(
+                messages = listOf(
+                    UiMessage(R.string.wear_message_remaining, listOf(UiMessageArg.Raw("ネイビーポロ"), UiMessageArg.Raw(2)))
+                ),
+                lastUpdatedAt = InstantCompat.nowOrNull()
+            )
             DashboardContent(
                 state = DashboardUiState(
                     isLoading = false,
@@ -688,7 +933,10 @@ private fun DashboardScreenPreview() {
                     ),
                     isRefreshingWeather = false,
                     lastWeatherUpdatedAt = InstantCompat.nowOrNull(),
-                    weatherErrorMessage = UiMessage(R.string.dashboard_weather_error)
+                    weatherErrorMessage = UiMessage(R.string.dashboard_weather_error),
+                    weatherDebug = weatherDebugState,
+                    clockDebug = clockDebugState,
+                    wearFeedbackDebug = feedbackDebugState
                 ),
                 onModeSelected = {},
                 onEnvironmentSelected = {},
@@ -697,7 +945,13 @@ private fun DashboardScreenPreview() {
                 onRerollSuggestion = {},
                 onReviewInventory = {},
                 onDismissReviewInventory = {},
-                onRefreshWeather = {}
+                onRefreshWeather = {},
+                onClockDebugNextDayChanged = {},
+                onDebugMinTempChanged = {},
+                onDebugMaxTempChanged = {},
+                onDebugHumidityChanged = {},
+                onApplyWeatherDebug = {},
+                onClearWeatherDebug = {}
             )
         }
     }

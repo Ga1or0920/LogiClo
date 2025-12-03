@@ -8,8 +8,17 @@ import java.time.Instant
  * Returns null on devices that do not support java.time APIs.
  */
 object InstantCompat {
+    @Volatile
+    private var offsetProvider: (() -> Long)? = null
+
+    fun registerDebugOffsetProvider(provider: (() -> Long)?) {
+        offsetProvider = provider
+    }
+
     fun nowOrNull(): Instant? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        Instant.now()
+        val base = Instant.now()
+        val offsetMillis = offsetProvider?.invoke() ?: 0L
+        if (offsetMillis != 0L) base.plusMillis(offsetMillis) else base
     } else {
         null
     }

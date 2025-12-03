@@ -43,6 +43,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.myapplication.R
 import com.example.myapplication.domain.model.CleaningType
 import com.example.myapplication.domain.model.ClothingCategory
+import com.example.myapplication.domain.model.SleeveLength
+import com.example.myapplication.domain.model.Thickness
 import com.example.myapplication.ui.common.labelResId
 import com.example.myapplication.ui.components.ClothingIllustrationSwatch
 import com.example.myapplication.ui.closet.closetCategoryOptions
@@ -85,6 +87,8 @@ fun ClosetEditorScreen(
         onAlwaysWashChanged = viewModel::onAlwaysWashChanged,
         onMaxWearsChanged = viewModel::onMaxWearsChanged,
         onCleaningTypeChanged = viewModel::onCleaningTypeChanged,
+        onSleeveLengthSelected = viewModel::onSleeveLengthSelected,
+        onThicknessSelected = viewModel::onThicknessSelected,
         onSave = viewModel::onSave,
         modifier = modifier
     )
@@ -101,6 +105,8 @@ private fun ClosetEditorContent(
     onAlwaysWashChanged: (Boolean) -> Unit,
     onMaxWearsChanged: (Int) -> Unit,
     onCleaningTypeChanged: (CleaningType) -> Unit,
+    onSleeveLengthSelected: (SleeveLength) -> Unit,
+    onThicknessSelected: (Thickness) -> Unit,
     onSave: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -254,14 +260,44 @@ private fun ClosetEditorContent(
                 label = stringResource(id = R.string.closet_editor_attribute_classification),
                 value = stringResource(id = state.type.labelResId())
             )
-            AttributeRow(
-                label = stringResource(id = R.string.closet_editor_attribute_sleeve),
-                value = stringResource(id = state.sleeveLength.labelResId())
+            Text(
+                text = stringResource(id = R.string.closet_editor_attribute_sleeve),
+                style = MaterialTheme.typography.titleSmall
             )
-            AttributeRow(
-                label = stringResource(id = R.string.closet_editor_attribute_thickness),
-                value = stringResource(id = state.thickness.labelResId())
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                SleeveLength.values()
+                    .filterNot { it == SleeveLength.UNKNOWN }
+                    .forEach { length ->
+                        val selected = state.sleeveLength == length
+                        FilterChip(
+                            selected = selected,
+                            onClick = { onSleeveLengthSelected(length) },
+                            label = { Text(stringResource(id = length.labelResId())) }
+                        )
+                    }
+            }
+            Text(
+                text = stringResource(id = R.string.closet_editor_attribute_thickness),
+                style = MaterialTheme.typography.titleSmall
             )
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Thickness.values()
+                    .filterNot { it == Thickness.UNKNOWN }
+                    .forEach { thickness ->
+                        val selected = state.thickness == thickness
+                        FilterChip(
+                            selected = selected,
+                            onClick = { onThicknessSelected(thickness) },
+                            label = { Text(stringResource(id = thickness.labelResId())) }
+                        )
+                    }
+            }
             AttributeRow(
                 label = stringResource(id = R.string.closet_editor_attribute_color_group),
                 value = state.selectedColor?.group?.let { group ->
@@ -324,6 +360,8 @@ private fun ClosetEditorPreview() {
         isAlwaysWash = false,
         maxWears = 3,
         cleaningType = CleaningType.HOME,
+        sleeveLength = SleeveLength.SHORT,
+        thickness = Thickness.THIN,
         availableCategories = closetCategoryOptions(),
         availableColors = closetColorOptions()
     )
@@ -337,6 +375,8 @@ private fun ClosetEditorPreview() {
             onAlwaysWashChanged = {},
             onMaxWearsChanged = {},
             onCleaningTypeChanged = {},
+            onSleeveLengthSelected = {},
+            onThicknessSelected = {},
             onSave = {}
         )
     }

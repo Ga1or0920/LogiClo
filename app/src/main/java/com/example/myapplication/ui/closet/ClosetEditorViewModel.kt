@@ -104,6 +104,18 @@ class ClosetEditorViewModel(
         }
     }
 
+    fun onSleeveLengthSelected(length: SleeveLength) {
+        _uiState.update { state ->
+            state.copy(sleeveLength = length)
+        }
+    }
+
+    fun onThicknessSelected(thickness: Thickness) {
+        _uiState.update { state ->
+            state.copy(thickness = thickness)
+        }
+    }
+
     fun onSave() {
         val current = _uiState.value
         if (!current.canSave || current.isSaving) return
@@ -287,16 +299,6 @@ internal fun closetCategoryOptions(): List<CategoryOption> = listOf(
         defaultCleaning = CleaningType.DRY,
         defaultMaxWears = 6,
         defaultAlwaysWash = false
-    ),
-    CategoryOption(
-        category = ClothingCategory.INNER,
-        labelResId = R.string.clothing_category_inner,
-        type = ClothingType.INNER,
-        defaultSleeve = SleeveLength.SHORT,
-        defaultThickness = Thickness.THIN,
-        defaultCleaning = CleaningType.HOME,
-        defaultMaxWears = 1,
-        defaultAlwaysWash = true
     ),
     CategoryOption(
         category = ClothingCategory.JACKET,

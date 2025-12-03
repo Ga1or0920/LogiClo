@@ -39,7 +39,7 @@ data class ClosetEditorUiState(
     val cleaningType: CleaningType = CleaningType.HOME,
     val type: ClothingType = ClothingType.TOP,
     val sleeveLength: SleeveLength = SleeveLength.UNKNOWN,
-    val thickness: Thickness = Thickness.NORMAL,
+    val thickness: Thickness = Thickness.UNKNOWN,
     val pattern: Pattern = Pattern.SOLID,
     val status: LaundryStatus = LaundryStatus.CLOSET,
     val isSaving: Boolean = false,

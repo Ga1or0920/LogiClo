@@ -1,6 +1,7 @@
 package com.example.myapplication.data
 
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import androidx.room.Room
 import com.example.myapplication.data.local.LaundryLoopDatabase
 import com.example.myapplication.data.local.entity.toEntity
@@ -11,12 +12,20 @@ import com.example.myapplication.data.repository.RoomClosetRepository
 import com.example.myapplication.data.repository.RoomUserPreferencesRepository
 import com.example.myapplication.data.repository.UserPreferencesRepository
 import com.example.myapplication.data.sample.SampleData
+import com.example.myapplication.data.weather.DebugWeatherRepository
 import com.example.myapplication.data.weather.InMemoryWeatherRepository
+import com.example.myapplication.data.weather.NoOpWeatherDebugController
 import com.example.myapplication.data.weather.OpenMeteoWeatherRepository
+import com.example.myapplication.data.weather.WeatherDebugController
+import com.example.myapplication.data.weather.WeatherDebugControllerImpl
 import com.example.myapplication.data.weather.WeatherRepository
 import com.example.myapplication.domain.model.ClothingItem
 import com.example.myapplication.domain.model.UserPreferences
 import com.example.myapplication.domain.model.WeatherSnapshot
+import com.example.myapplication.util.time.DebugClockController
+import com.example.myapplication.util.time.DebugClockControllerImpl
+import com.example.myapplication.util.time.InstantCompat
+import com.example.myapplication.util.time.NoOpDebugClockController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -25,6 +34,8 @@ interface AppContainer {
     val closetRepository: ClosetRepository
     val userPreferencesRepository: UserPreferencesRepository
     val weatherRepository: WeatherRepository
+    val weatherDebugController: WeatherDebugController
+    val clockDebugController: DebugClockController
 }
 
 class DefaultAppContainer(
@@ -34,6 +45,9 @@ class DefaultAppContainer(
     seedPreferences: UserPreferences = SampleData.defaultUserPreferences,
     seedWeather: WeatherSnapshot = SampleData.weather
 ) : AppContainer {
+
+    private val isDebugBuild: Boolean =
+        (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
 
     private val database: LaundryLoopDatabase = Room.databaseBuilder(
         context,
@@ -52,10 +66,19 @@ class DefaultAppContainer(
         coordinates = TOKYO_COORDINATES,
         initialSnapshot = seedWeather
     )
-
-    override val weatherRepository: WeatherRepository = openMeteoWeatherRepository
+    private val weatherDebugControllerImpl: WeatherDebugController =
+        if (isDebugBuild) WeatherDebugControllerImpl() else NoOpWeatherDebugController
+    private val clockDebugControllerImpl: DebugClockController =
+        if (isDebugBuild) DebugClockControllerImpl() else NoOpDebugClockController
+    override val weatherRepository: WeatherRepository = DebugWeatherRepository(
+        delegate = openMeteoWeatherRepository,
+        debugController = weatherDebugControllerImpl
+    )
+    override val weatherDebugController: WeatherDebugController = weatherDebugControllerImpl
+    override val clockDebugController: DebugClockController = clockDebugControllerImpl
 
     init {
+        InstantCompat.registerDebugOffsetProvider(clockDebugControllerImpl::currentOffsetMillis)
         appScope.launch(Dispatchers.IO) {
             seedDatabaseIfNeeded(seedClosetItems, seedPreferences)
             openMeteoWeatherRepository.refresh()
@@ -89,8 +112,24 @@ class InMemoryAppContainer(
     seedWeather: WeatherSnapshot = SampleData.weather
 ) : AppContainer {
 
+    private val isDebugBuild: Boolean = true
+
     override val closetRepository: ClosetRepository = InMemoryClosetRepository(seedClosetItems)
     override val userPreferencesRepository: UserPreferencesRepository =
         InMemoryUserPreferencesRepository(seedPreferences)
-    override val weatherRepository: WeatherRepository = InMemoryWeatherRepository(seedWeather)
+    private val inMemoryWeatherRepository = InMemoryWeatherRepository(seedWeather)
+    private val weatherDebugControllerImpl: WeatherDebugController =
+        if (isDebugBuild) WeatherDebugControllerImpl() else NoOpWeatherDebugController
+    private val clockDebugControllerImpl: DebugClockController =
+        if (isDebugBuild) DebugClockControllerImpl() else NoOpDebugClockController
+    override val weatherRepository: WeatherRepository = DebugWeatherRepository(
+        delegate = inMemoryWeatherRepository,
+        debugController = weatherDebugControllerImpl
+    )
+    override val weatherDebugController: WeatherDebugController = weatherDebugControllerImpl
+    override val clockDebugController: DebugClockController = clockDebugControllerImpl
+
+    init {
+        InstantCompat.registerDebugOffsetProvider(clockDebugControllerImpl::currentOffsetMillis)
+    }
 }

@@ -1,12 +1,16 @@
 package com.example.myapplication.ui.dashboard
 
+import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.myapplication.R
 import com.example.myapplication.data.repository.ClosetRepository
 import com.example.myapplication.data.repository.UserPreferencesRepository
+import com.example.myapplication.data.weather.NoOpWeatherDebugController
 import com.example.myapplication.data.weather.WeatherRepository
+import com.example.myapplication.data.weather.WeatherDebugController
+import com.example.myapplication.data.weather.WeatherDebugOverride
 import com.example.myapplication.domain.model.ClothingCategory
 import com.example.myapplication.domain.model.ClothingItem
 import com.example.myapplication.domain.model.ClothingType
@@ -21,13 +25,18 @@ import com.example.myapplication.domain.usecase.ApplyWearUseCase
 import com.example.myapplication.domain.usecase.ApplyWearUseCase.WearReason
 import com.example.myapplication.domain.usecase.FormalScoreCalculator
 import com.example.myapplication.domain.usecase.WeatherSuitabilityEvaluator
+import com.example.myapplication.util.time.DebugClockController
 import com.example.myapplication.util.time.InstantCompat
+import com.example.myapplication.util.time.NoOpDebugClockController
 import java.time.Instant
 import java.util.Locale
 import com.example.myapplication.ui.dashboard.model.AlertSeverity
+import com.example.myapplication.ui.dashboard.model.ClockDebugUiState
 import com.example.myapplication.ui.dashboard.model.DashboardUiState
 import com.example.myapplication.ui.dashboard.model.InventoryAlert
 import com.example.myapplication.ui.dashboard.model.OutfitSuggestion
+import com.example.myapplication.ui.dashboard.model.WeatherDebugUiState
+import com.example.myapplication.ui.dashboard.model.WearFeedbackDebugUiState
 import com.example.myapplication.ui.common.UiMessage
 import com.example.myapplication.ui.common.UiMessageArg
 import com.example.myapplication.ui.common.labelResId
@@ -46,6 +55,8 @@ class DashboardViewModel(
     private val closetRepository: ClosetRepository,
     private val userPreferencesRepository: UserPreferencesRepository,
     private val weatherRepository: WeatherRepository,
+    private val weatherDebugController: WeatherDebugController,
+    private val clockDebugController: DebugClockController,
     private val formalScoreCalculator: FormalScoreCalculator,
     private val weatherSuitabilityEvaluator: WeatherSuitabilityEvaluator,
     private val applyWearUseCase: ApplyWearUseCase,
@@ -59,26 +70,54 @@ class DashboardViewModel(
     private val weatherStatus = MutableStateFlow(WeatherRefreshStatus())
     private var suggestionCache: List<OutfitSuggestion> = emptyList()
     private val reviewDialogState = MutableStateFlow(false)
+    private val weatherDebugState = MutableStateFlow(
+        if (weatherDebugController.isSupported) WeatherDebugUiState() else null
+    )
+    private val clockDebugState = MutableStateFlow(
+        if (clockDebugController.isSupported) ClockDebugUiState() else null
+    )
+    private val wearFeedbackDebugState = MutableStateFlow(
+        if (clockDebugController.isSupported || weatherDebugController.isSupported) WearFeedbackDebugUiState() else null
+    )
 
     private val _toastEvents = MutableSharedFlow<List<UiMessage>>(extraBufferCapacity = 1)
     val toastEvents = _toastEvents.asSharedFlow()
 
     init {
         observeData()
+        observeWeatherDebug()
+        observeWeatherDebugDefaults()
+        observeClockDebug()
         refreshWeather()
     }
 
     private fun observeData() {
         viewModelScope.launch {
             combine(
-                userPreferencesRepository.observe(),
-                closetRepository.observeAll(),
-                weatherRepository.observeCurrentWeather(),
-                weatherStatus,
-                selectionState
-            ) { preferences, items, weather, weatherStatus, selectedPair ->
-                CombinedInputs(preferences, items, weather, weatherStatus, selectedPair)
-            }.combine(reviewDialogState) { inputs, reviewVisible ->
+                combine(
+                    userPreferencesRepository.observe(),
+                    closetRepository.observeAll(),
+                    weatherRepository.observeCurrentWeather(),
+                    weatherStatus,
+                    selectionState
+                ) { preferences, items, weather, weatherStatus, selectedPair ->
+                    CombinedInputs(preferences, items, weather, weatherStatus, selectedPair)
+                },
+                weatherDebugState,
+                clockDebugState,
+                wearFeedbackDebugState
+            ) { inputs, weatherDebug, clockDebug, wearFeedback ->
+                CombinedInputsWithDebug(
+                    base = inputs,
+                    weatherDebug = weatherDebug,
+                    clockDebug = clockDebug,
+                    wearFeedback = wearFeedback
+                )
+            }.combine(reviewDialogState) { combined, reviewVisible ->
+                val inputs = combined.base
+                val weatherDebug = combined.weatherDebug
+                val clockDebug = combined.clockDebug
+                val wearFeedback = combined.wearFeedback
                 val preferences = inputs.preferences
                 val items = inputs.items
                 val weather = inputs.weather
@@ -145,10 +184,89 @@ class DashboardViewModel(
                     totalSuggestionCount = totalSuggestionCount,
                     selectionInsights = insights,
                     inventoryReviewMessages = reviewMessages,
-                    isInventoryReviewVisible = reviewVisible && reviewMessages.isNotEmpty()
+                    isInventoryReviewVisible = reviewVisible && reviewMessages.isNotEmpty(),
+                    weatherDebug = weatherDebug,
+                    clockDebug = clockDebug,
+                    wearFeedbackDebug = wearFeedback
                 )
             }.collect { state ->
                 _uiState.value = state
+            }
+        }
+    }
+
+    private fun observeWeatherDebug() {
+        if (!weatherDebugController.isSupported) return
+        viewModelScope.launch {
+            weatherDebugController.override.collect { override ->
+                weatherDebugState.update { current ->
+                    current?.let { state ->
+                        if (override != null) {
+                            state.copy(
+                                minTemperatureInput = formatTemperature(override.minTemperatureCelsius),
+                                maxTemperatureInput = formatTemperature(override.maxTemperatureCelsius),
+                                humidityInput = override.humidityPercent.toString(),
+                                isOverrideActive = true,
+                                errorMessage = null
+                            )
+                        } else {
+                            state.copy(isOverrideActive = false, errorMessage = null)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun observeWeatherDebugDefaults() {
+        if (!weatherDebugController.isSupported) return
+        viewModelScope.launch {
+            weatherRepository.observeCurrentWeather().collect { snapshot ->
+                weatherDebugState.update { current ->
+                    current?.let { state ->
+                        if (state.isOverrideActive) {
+                            state
+                        } else {
+                            val minText = formatTemperature(snapshot.minTemperatureCelsius)
+                            val maxText = formatTemperature(snapshot.maxTemperatureCelsius)
+                            val humidityText = snapshot.humidityPercent.toString()
+                            if (
+                                state.minTemperatureInput == minText &&
+                                state.maxTemperatureInput == maxText &&
+                                state.humidityInput == humidityText
+                            ) {
+                                state
+                            } else {
+                                state.copy(
+                                    minTemperatureInput = minText,
+                                    maxTemperatureInput = maxText,
+                                    humidityInput = humidityText
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun observeClockDebug() {
+        if (!clockDebugController.isSupported) return
+        viewModelScope.launch {
+            clockDebugController.nextDayEnabled.collect { enabled ->
+                clockDebugState.update { current ->
+                    current?.let { state ->
+                        val updatedLastApplied = if (!state.isNextDayEnabled && enabled) {
+                            InstantCompat.nowOrNull()
+                        } else {
+                            state.lastAppliedAt
+                        }
+                        state.copy(
+                            isNextDayEnabled = enabled,
+                            lastAppliedAt = updatedLastApplied
+                        )
+                    }
+                }
             }
         }
     }
@@ -172,6 +290,86 @@ class DashboardViewModel(
                     )
                 }
             }
+        }
+    }
+
+    fun onClockDebugNextDayChanged(enabled: Boolean) {
+        if (!clockDebugController.isSupported) return
+        clockDebugController.setNextDayEnabled(enabled)
+    }
+
+    fun onDebugMinTemperatureChanged(value: String) {
+        weatherDebugState.update { current ->
+            current?.copy(minTemperatureInput = value, errorMessage = null)
+        }
+    }
+
+    fun onDebugMaxTemperatureChanged(value: String) {
+        weatherDebugState.update { current ->
+            current?.copy(maxTemperatureInput = value, errorMessage = null)
+        }
+    }
+
+    fun onDebugHumidityChanged(value: String) {
+        weatherDebugState.update { current ->
+            current?.copy(humidityInput = value, errorMessage = null)
+        }
+    }
+
+    fun applyWeatherDebugOverride() {
+        val current = weatherDebugState.value ?: return
+        val minTemp = current.minTemperatureInput.trim().toDoubleOrNull()
+        val maxTemp = current.maxTemperatureInput.trim().toDoubleOrNull()
+        val humidity = current.humidityInput.trim().toIntOrNull()
+        if (minTemp == null || maxTemp == null || humidity == null) {
+            setWeatherDebugError(R.string.debug_weather_error_invalid_number)
+            return
+        }
+        if (humidity !in 0..100) {
+            setWeatherDebugError(R.string.debug_weather_error_humidity_range)
+            return
+        }
+        if (minTemp > maxTemp) {
+            setWeatherDebugError(R.string.debug_weather_error_min_greater_than_max)
+            return
+        }
+        val sanitizedHumidity = humidity.coerceIn(0, 100)
+        weatherDebugController.applyOverride(
+            WeatherDebugOverride(
+                minTemperatureCelsius = minTemp,
+                maxTemperatureCelsius = maxTemp,
+                humidityPercent = sanitizedHumidity
+            )
+        )
+        val appliedAt = InstantCompat.nowOrNull()
+        weatherDebugState.update { state ->
+            state?.copy(
+                errorMessage = null,
+                isOverrideActive = true,
+                lastAppliedAt = appliedAt,
+                minTemperatureInput = formatTemperature(minTemp),
+                maxTemperatureInput = formatTemperature(maxTemp),
+                humidityInput = sanitizedHumidity.toString()
+            )
+        }
+    }
+
+    fun clearWeatherDebugOverride() {
+        if (!weatherDebugController.isSupported) return
+        weatherDebugController.clearOverride()
+        weatherDebugState.update { state ->
+            state?.copy(
+                isOverrideActive = false,
+                errorMessage = null,
+                lastAppliedAt = null
+            )
+        }
+    }
+
+    private fun setWeatherDebugError(@StringRes resId: Int) {
+        val message = stringResolver(resId)
+        weatherDebugState.update { state ->
+            state?.copy(errorMessage = message)
         }
     }
 
@@ -379,9 +577,9 @@ class DashboardViewModel(
     }
 
     private fun resolveScoreRange(mode: TpoMode): IntRange = when (mode) {
-        TpoMode.CASUAL -> 0..6
-        TpoMode.OFFICE -> 7..14
-        else -> 0..10
+        TpoMode.CASUAL -> 5..12
+        TpoMode.OFFICE -> 13..18
+        else -> 5..15
     }
 
     private fun formatScoreRange(range: IntRange): String = "${range.first}~${range.last}"
@@ -540,6 +738,12 @@ class DashboardViewModel(
             val outcomes = uniqueItems.map { applyWearUseCase.execute(it, weather) }
             outcomes.forEach { outcome -> closetRepository.upsert(outcome.updatedItem) }
             val messages = outcomes.map { outcome -> outcome.toUiMessage(stringResolver) }
+            wearFeedbackDebugState.update { current ->
+                current?.copy(
+                    messages = messages,
+                    lastUpdatedAt = InstantCompat.nowOrNull()
+                )
+            }
             _toastEvents.emit(messages)
         }
     }
@@ -552,6 +756,8 @@ class DashboardViewModel(
         private val closetRepository: ClosetRepository,
         private val userPreferencesRepository: UserPreferencesRepository,
         private val weatherRepository: WeatherRepository,
+        private val weatherDebugController: WeatherDebugController = NoOpWeatherDebugController,
+        private val clockDebugController: DebugClockController = NoOpDebugClockController,
         private val formalScoreCalculator: FormalScoreCalculator = FormalScoreCalculator(),
         private val weatherSuitabilityEvaluator: WeatherSuitabilityEvaluator = WeatherSuitabilityEvaluator(),
         private val applyWearUseCase: ApplyWearUseCase = ApplyWearUseCase(),
@@ -564,6 +770,8 @@ class DashboardViewModel(
                     closetRepository = closetRepository,
                     userPreferencesRepository = userPreferencesRepository,
                     weatherRepository = weatherRepository,
+                    weatherDebugController = weatherDebugController,
+                    clockDebugController = clockDebugController,
                     formalScoreCalculator = formalScoreCalculator,
                     weatherSuitabilityEvaluator = weatherSuitabilityEvaluator,
                     applyWearUseCase = applyWearUseCase,
@@ -586,6 +794,13 @@ private data class CombinedInputs(
     val weather: WeatherSnapshot,
     val weatherStatus: WeatherRefreshStatus,
     val selectedPair: Pair<String, String>?
+)
+
+private data class CombinedInputsWithDebug(
+    val base: CombinedInputs,
+    val weatherDebug: WeatherDebugUiState?,
+    val clockDebug: ClockDebugUiState?,
+    val wearFeedback: WearFeedbackDebugUiState?
 )
 
 private val OutfitSuggestion.pairIds: Pair<String, String>

@@ -39,5 +39,27 @@ data class DashboardUiState(
     val isRefreshingWeather: Boolean = false,
     val lastWeatherUpdatedAt: Instant? = null,
     val weatherErrorMessage: UiMessage? = null,
-    val purchaseRecommendations: List<UiMessage> = emptyList()
+    val purchaseRecommendations: List<UiMessage> = emptyList(),
+    val weatherDebug: WeatherDebugUiState? = null,
+    val clockDebug: ClockDebugUiState? = null,
+    val wearFeedbackDebug: WearFeedbackDebugUiState? = null
+)
+
+data class WeatherDebugUiState(
+    val minTemperatureInput: String = "",
+    val maxTemperatureInput: String = "",
+    val humidityInput: String = "",
+    val isOverrideActive: Boolean = false,
+    val errorMessage: String? = null,
+    val lastAppliedAt: Instant? = null
+)
+
+data class ClockDebugUiState(
+    val isNextDayEnabled: Boolean = false,
+    val lastAppliedAt: Instant? = null
+)
+
+data class WearFeedbackDebugUiState(
+    val messages: List<UiMessage> = emptyList(),
+    val lastUpdatedAt: Instant? = null
 )
