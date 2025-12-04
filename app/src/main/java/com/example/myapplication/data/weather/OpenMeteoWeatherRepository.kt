@@ -1,5 +1,6 @@
 package com.example.myapplication.data.weather
 
+import android.os.Build
 import android.util.Log
 import com.example.myapplication.domain.model.WeatherSnapshot
 import com.example.myapplication.util.time.InstantCompat
@@ -84,6 +85,9 @@ class OpenMeteoWeatherRepository(
     }
 
     private fun parseUpdatedAt(json: JSONObject): Instant? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            return null
+        }
         val currentWeather = json.optJSONObject("current_weather") ?: return null
         val timeString = currentWeather.optString("time").takeIf { it.isNotBlank() } ?: return null
         val timezoneId = json.optString("timezone", "").takeIf { it.isNotBlank() }

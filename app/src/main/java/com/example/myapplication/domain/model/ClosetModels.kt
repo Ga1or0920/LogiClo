@@ -129,6 +129,7 @@ data class ClothingItem(
     val isAlwaysWash: Boolean,
     val cleaningType: CleaningType,
     val status: LaundryStatus,
+    val brand: String? = null,
     val imageUrl: String? = null,
     val lastWornDate: Instant? = null
 )

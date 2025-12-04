@@ -1,22 +1,31 @@
 package com.example.myapplication.data.local
 
+import android.content.Context
 import androidx.room.Database
+import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.myapplication.data.local.dao.ClothingItemDao
 import com.example.myapplication.data.local.dao.UserPreferencesDao
+import com.example.myapplication.data.local.dao.WearFeedbackDao
 import com.example.myapplication.data.local.entity.ClothingItemEntity
 import com.example.myapplication.data.local.entity.UserPreferencesEntity
+import com.example.myapplication.data.local.entity.WearFeedbackEntity
 
 @Database(
-    entities = [ClothingItemEntity::class, UserPreferencesEntity::class],
-    version = 3,
+    entities = [
+        ClothingItemEntity::class,
+        UserPreferencesEntity::class,
+        WearFeedbackEntity::class
+    ],
+    version = 5,
     exportSchema = false
 )
 abstract class LaundryLoopDatabase : RoomDatabase() {
     abstract fun clothingItemDao(): ClothingItemDao
     abstract fun userPreferencesDao(): UserPreferencesDao
+    abstract fun wearFeedbackDao(): WearFeedbackDao
 
     companion object {
         const val NAME: String = "laundry_loop.db"
@@ -35,6 +44,57 @@ abstract class LaundryLoopDatabase : RoomDatabase() {
                     "ALTER TABLE user_preferences ADD COLUMN defaultMaxWearsJson TEXT NOT NULL DEFAULT '{}'"
                 )
             }
+        }
+
+        val MIGRATION_3_4: Migration = object : Migration(3, 4) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "ALTER TABLE clothing_items ADD COLUMN brand TEXT"
+                )
+            }
+        }
+
+        val MIGRATION_4_5: Migration = object : Migration(4, 5) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS wear_feedback_entries (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        wornAtEpochMillis INTEGER NOT NULL,
+                        topItemId TEXT,
+                        bottomItemId TEXT,
+                        rating TEXT,
+                        notes TEXT,
+                        submittedAtEpochMillis INTEGER
+                    )
+                    """.trimIndent()
+                )
+                database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_wear_feedback_pending ON wear_feedback_entries(rating, wornAtEpochMillis)"
+                )
+            }
+        }
+
+        @Volatile
+        private var instance: LaundryLoopDatabase? = null
+
+        fun getInstance(context: Context): LaundryLoopDatabase {
+            return instance ?: synchronized(this) {
+                instance ?: buildDatabase(context.applicationContext).also { instance = it }
+            }
+        }
+
+        private fun buildDatabase(context: Context): LaundryLoopDatabase {
+            return Room.databaseBuilder(
+                context,
+                LaundryLoopDatabase::class.java,
+                NAME
+            ).addMigrations(
+                MIGRATION_1_2,
+                MIGRATION_2_3,
+                MIGRATION_3_4,
+                MIGRATION_4_5
+            ).build()
         }
     }
 }

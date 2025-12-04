@@ -13,7 +13,7 @@ import com.example.myapplication.R
  */
 enum class AppDestination(
     val route: String,
-    @StringRes val labelRes: Int,
+    @param:StringRes val labelRes: Int,
     val icon: ImageVector
 ) {
     Dashboard(

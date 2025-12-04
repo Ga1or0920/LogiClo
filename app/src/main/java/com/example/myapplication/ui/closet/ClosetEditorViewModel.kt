@@ -60,6 +60,12 @@ class ClosetEditorViewModel(
         }
     }
 
+    fun onBrandChanged(value: String) {
+        _uiState.update { state ->
+            state.copy(brand = value)
+        }
+    }
+
     fun onCategorySelected(option: CategoryOption) {
         _uiState.update { state ->
             val initialAlwaysWash = resolveInitialAlwaysWash(option)
@@ -161,6 +167,7 @@ class ClosetEditorViewModel(
             ?: error("Color must be selected before saving")
 
         val maxWear = if (state.isAlwaysWash) 1 else state.maxWears
+        val brand = state.brand.trim().takeIf { it.isNotEmpty() }
 
         return ClothingItem(
             id = UUID.randomUUID().toString(),
@@ -177,6 +184,7 @@ class ClosetEditorViewModel(
             isAlwaysWash = state.isAlwaysWash,
             cleaningType = state.cleaningType,
             status = LaundryStatus.CLOSET,
+            brand = brand,
             imageUrl = null,
             lastWornDate = null
         )

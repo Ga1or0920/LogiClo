@@ -1,7 +1,8 @@
 package com.example.myapplication.ui.dashboard
 
 import android.content.Context
-import android.widget.Toast
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.os.Build
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
@@ -19,15 +20,23 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.annotation.StringRes
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -35,6 +44,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -42,6 +54,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.graphics.vector.ImageVector
 import com.example.myapplication.util.time.InstantCompat
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.width
@@ -72,6 +85,11 @@ import java.time.ZoneId
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
+import android.Manifest
+import android.content.pm.PackageManager
 
 @Composable
 fun DashboardScreen(modifier: Modifier = Modifier) {
@@ -82,6 +100,7 @@ fun DashboardScreen(modifier: Modifier = Modifier) {
             closetRepository = appContainer.closetRepository,
             userPreferencesRepository = appContainer.userPreferencesRepository,
             weatherRepository = appContainer.weatherRepository,
+            wearFeedbackRepository = appContainer.wearFeedbackRepository,
             weatherDebugController = appContainer.weatherDebugController,
             clockDebugController = appContainer.clockDebugController,
             stringResolver = context::getString
@@ -91,10 +110,9 @@ fun DashboardScreen(modifier: Modifier = Modifier) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
     LaunchedEffect(viewModel) {
-        viewModel.toastEvents.collect { messages ->
-            messages.forEach { message ->
-                Toast.makeText(context, message.resolve(context), Toast.LENGTH_SHORT).show()
-            }
+        ensureWearNotificationChannel(context)
+        viewModel.wearNotificationEvents.collect { messages ->
+            showWearNotification(context, messages)
         }
     }
 
@@ -137,8 +155,85 @@ private fun DashboardContent(
     onClearWeatherDebug: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    LazyColumn(
+    val tabs = DashboardTab.entries
+    var selectedTabIndex by rememberSaveable { mutableIntStateOf(DashboardTab.OVERVIEW.ordinal) }
+    val selectedTab = tabs[selectedTabIndex]
+
+    Scaffold(
         modifier = modifier.fillMaxSize(),
+        bottomBar = {
+            NavigationBar {
+                tabs.forEach { tab ->
+                    NavigationBarItem(
+                        selected = selectedTab == tab,
+                        onClick = { selectedTabIndex = tab.ordinal },
+                        icon = {
+                            Icon(
+                                imageVector = tab.icon,
+                                contentDescription = stringResource(id = tab.labelRes)
+                            )
+                        },
+                        label = { Text(text = stringResource(id = tab.labelRes)) }
+                    )
+                }
+            }
+        }
+    ) { innerPadding ->
+        when (selectedTab) {
+            DashboardTab.OVERVIEW -> OverviewTabContent(
+                state = state,
+                onModeSelected = onModeSelected,
+                onEnvironmentSelected = onEnvironmentSelected,
+                onSuggestionSelected = onSuggestionSelected,
+                onWearClicked = onWearClicked,
+                onRerollSuggestion = onRerollSuggestion,
+                onReviewInventory = onReviewInventory,
+                onRefreshWeather = onRefreshWeather,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+            )
+
+            DashboardTab.DEBUG -> DebugTabContent(
+                weatherDebug = state.weatherDebug,
+                clockDebug = state.clockDebug,
+                wearFeedbackDebug = state.wearFeedbackDebug,
+                onClockDebugNextDayChanged = onClockDebugNextDayChanged,
+                onDebugMinTempChanged = onDebugMinTempChanged,
+                onDebugMaxTempChanged = onDebugMaxTempChanged,
+                onDebugHumidityChanged = onDebugHumidityChanged,
+                onApplyWeatherDebug = onApplyWeatherDebug,
+                onClearWeatherDebug = onClearWeatherDebug,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+            )
+        }
+    }
+
+    if (state.isInventoryReviewVisible) {
+        InventoryReviewDialog(
+            alert = state.alert,
+            messages = state.inventoryReviewMessages,
+            onDismiss = onDismissReviewInventory
+        )
+    }
+}
+
+@Composable
+private fun OverviewTabContent(
+    state: DashboardUiState,
+    onModeSelected: (TpoMode) -> Unit,
+    onEnvironmentSelected: (EnvironmentMode) -> Unit,
+    onSuggestionSelected: (OutfitSuggestion) -> Unit,
+    onWearClicked: () -> Unit,
+    onRerollSuggestion: () -> Unit,
+    onReviewInventory: () -> Unit,
+    onRefreshWeather: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    LazyColumn(
+        modifier = modifier,
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -172,34 +267,6 @@ private fun DashboardContent(
                     errorMessage = state.weatherErrorMessage,
                     onRefresh = onRefreshWeather
                 )
-            }
-        }
-
-        state.weatherDebug?.let { debugState ->
-            item {
-                WeatherDebugCard(
-                    state = debugState,
-                    onMinTempChanged = onDebugMinTempChanged,
-                    onMaxTempChanged = onDebugMaxTempChanged,
-                    onHumidityChanged = onDebugHumidityChanged,
-                    onApply = onApplyWeatherDebug,
-                    onClear = onClearWeatherDebug
-                )
-            }
-        }
-
-        state.clockDebug?.let { clockState ->
-            item {
-                ClockDebugCard(
-                    state = clockState,
-                    onToggleNextDay = onClockDebugNextDayChanged
-                )
-            }
-        }
-
-        state.wearFeedbackDebug?.let { feedbackState ->
-            item {
-                WearFeedbackDebugCard(state = feedbackState)
             }
         }
 
@@ -268,13 +335,69 @@ private fun DashboardContent(
             )
         }
     }
+}
 
-    if (state.isInventoryReviewVisible) {
-        InventoryReviewDialog(
-            messages = state.inventoryReviewMessages,
-            onDismiss = onDismissReviewInventory
-        )
+@Composable
+private fun DebugTabContent(
+    weatherDebug: WeatherDebugUiState?,
+    clockDebug: ClockDebugUiState?,
+    wearFeedbackDebug: WearFeedbackDebugUiState?,
+    onClockDebugNextDayChanged: (Boolean) -> Unit,
+    onDebugMinTempChanged: (String) -> Unit,
+    onDebugMaxTempChanged: (String) -> Unit,
+    onDebugHumidityChanged: (String) -> Unit,
+    onApplyWeatherDebug: () -> Unit,
+    onClearWeatherDebug: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    LazyColumn(
+        modifier = modifier,
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        if (weatherDebug == null && clockDebug == null && wearFeedbackDebug == null) {
+            item {
+                Text(
+                    text = stringResource(id = R.string.debug_tab_empty),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else {
+            weatherDebug?.let { debugState ->
+                item {
+                    WeatherDebugCard(
+                        state = debugState,
+                        onMinTempChanged = onDebugMinTempChanged,
+                        onMaxTempChanged = onDebugMaxTempChanged,
+                        onHumidityChanged = onDebugHumidityChanged,
+                        onApply = onApplyWeatherDebug,
+                        onClear = onClearWeatherDebug
+                    )
+                }
+            }
+
+            clockDebug?.let { clockState ->
+                item {
+                    ClockDebugCard(
+                        state = clockState,
+                        onToggleNextDay = onClockDebugNextDayChanged
+                    )
+                }
+            }
+
+            wearFeedbackDebug?.let { feedbackState ->
+                item {
+                    WearFeedbackDebugCard(state = feedbackState)
+                }
+            }
+        }
     }
+}
+
+private enum class DashboardTab(@param:StringRes val labelRes: Int, val icon: ImageVector) {
+    OVERVIEW(R.string.dashboard_tab_overview, Icons.Filled.Dashboard),
+    DEBUG(R.string.dashboard_tab_debug, Icons.Filled.BugReport)
 }
 
 @Composable
@@ -354,10 +477,15 @@ private fun SelectionInsightsCard(
 
 @Composable
 private fun InventoryReviewDialog(
+    alert: InventoryAlert?,
     messages: List<UiMessage>,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val filteredMessages = alert?.message?.let { message ->
+        messages.filterNot { it == message }
+    } ?: messages
+
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
@@ -371,11 +499,27 @@ private fun InventoryReviewDialog(
         text = {
             Column(
                 modifier = modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                messages.forEach { message ->
+                alert?.let {
                     Text(
-                        text = "• ${message.resolve()}",
+                        text = stringResource(id = R.string.dashboard_review_dialog_alert_header),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    InventoryReviewAlertCard(alert = it)
+                }
+
+                if (filteredMessages.isNotEmpty()) {
+                    Text(
+                        text = stringResource(id = R.string.dashboard_review_dialog_recommendation_header),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    InventoryReviewRecommendationList(messages = filteredMessages)
+                } else if (alert == null) {
+                    Text(
+                        text = stringResource(id = R.string.dashboard_review_dialog_empty_state),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -383,6 +527,72 @@ private fun InventoryReviewDialog(
             }
         }
     )
+}
+
+@Composable
+private fun InventoryReviewAlertCard(
+    alert: InventoryAlert,
+    modifier: Modifier = Modifier
+) {
+    val (containerColor, onContainerColor, labelResId) = when (alert.severity) {
+        AlertSeverity.ERROR -> Triple(
+            MaterialTheme.colorScheme.errorContainer,
+            MaterialTheme.colorScheme.onErrorContainer,
+            R.string.dashboard_review_dialog_severity_error
+        )
+        AlertSeverity.WARNING -> Triple(
+            MaterialTheme.colorScheme.tertiaryContainer,
+            MaterialTheme.colorScheme.onTertiaryContainer,
+            R.string.dashboard_review_dialog_severity_warning
+        )
+        AlertSeverity.NONE -> Triple(
+            MaterialTheme.colorScheme.surfaceVariant,
+            MaterialTheme.colorScheme.onSurfaceVariant,
+            R.string.dashboard_review_dialog_severity_info
+        )
+    }
+
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = containerColor,
+        contentColor = onContainerColor,
+        shape = MaterialTheme.shapes.medium
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = stringResource(id = labelResId),
+                style = MaterialTheme.typography.labelMedium,
+                color = onContainerColor
+            )
+            Text(
+                text = alert.message.resolve(),
+                style = MaterialTheme.typography.bodyMedium,
+                color = onContainerColor
+            )
+        }
+    }
+}
+
+@Composable
+private fun InventoryReviewRecommendationList(
+    messages: List<UiMessage>,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        messages.forEach { message ->
+            Text(
+                text = "• ${message.resolve()}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
 }
 
 @Composable
@@ -534,6 +744,11 @@ private fun WeatherDebugCard(
                     text = stringResource(id = R.string.debug_weather_active),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = stringResource(id = R.string.debug_weather_persistent_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             state.lastAppliedAt?.let { instant ->
@@ -845,6 +1060,65 @@ private fun UiMessage.resolve(context: Context): String {
 private fun UiMessage.resolve(): String {
     val context = LocalContext.current
     return resolve(context)
+}
+
+private const val WEAR_NOTIFICATION_CHANNEL_ID = "wear_notifications"
+private const val WEAR_NOTIFICATION_ID = 1001
+
+private fun ensureWearNotificationChannel(context: Context) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val existing = manager.getNotificationChannel(WEAR_NOTIFICATION_CHANNEL_ID)
+        if (existing == null) {
+            val channelName = context.getString(R.string.notification_channel_wear_title)
+            val channel = NotificationChannel(
+                WEAR_NOTIFICATION_CHANNEL_ID,
+                channelName,
+                NotificationManager.IMPORTANCE_DEFAULT
+            ).apply {
+                description = context.getString(R.string.notification_channel_wear_description)
+            }
+            manager.createNotificationChannel(channel)
+        }
+    }
+}
+
+private fun showWearNotification(context: Context, messages: List<UiMessage>) {
+    if (messages.isEmpty()) return
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        val permissionGranted = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.POST_NOTIFICATIONS
+        ) == PackageManager.PERMISSION_GRANTED
+        if (!permissionGranted) {
+            return
+        }
+    }
+
+    val resolvedMessages = messages.map { it.resolve(context) }
+    val contentTitle = context.getString(R.string.notification_wear_title)
+    val contentText = resolvedMessages.first()
+
+    val notificationManager = NotificationManagerCompat.from(context)
+    if (!notificationManager.areNotificationsEnabled()) {
+        return
+    }
+
+    val builder = NotificationCompat.Builder(context, WEAR_NOTIFICATION_CHANNEL_ID)
+        .setSmallIcon(R.drawable.ic_notification_wear)
+        .setContentTitle(contentTitle)
+        .setContentText(contentText)
+        .setStyle(
+            NotificationCompat.InboxStyle().also { style ->
+                resolvedMessages.forEach(style::addLine)
+            }
+        )
+        .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+        .setCategory(NotificationCompat.CATEGORY_STATUS)
+        .setAutoCancel(true)
+
+    notificationManager.notify(WEAR_NOTIFICATION_ID, builder.build())
 }
 
 @Preview(showBackground = true)

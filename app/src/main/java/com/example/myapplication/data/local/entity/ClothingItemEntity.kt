@@ -30,6 +30,7 @@ data class ClothingItemEntity(
     val isAlwaysWash: Boolean,
     val cleaningType: String,
     val status: String,
+    val brand: String?,
     val imageUrl: String?,
     val lastWornEpochMillis: Long?
 )
@@ -49,6 +50,7 @@ fun ClothingItemEntity.toDomain(): ClothingItem = ClothingItem(
     isAlwaysWash = isAlwaysWash,
     cleaningType = CleaningType.fromBackend(cleaningType),
     status = LaundryStatus.fromBackend(status),
+    brand = brand,
     imageUrl = imageUrl,
     lastWornDate = InstantCompat.ofEpochMilliOrNull(lastWornEpochMillis)
 )
@@ -68,6 +70,7 @@ fun ClothingItem.toEntity(): ClothingItemEntity = ClothingItemEntity(
     isAlwaysWash = isAlwaysWash,
     cleaningType = cleaningType.backendValue,
     status = status.backendValue,
+    brand = brand,
     imageUrl = imageUrl,
     lastWornEpochMillis = InstantCompat.toEpochMilliOrNull(lastWornDate)
 )

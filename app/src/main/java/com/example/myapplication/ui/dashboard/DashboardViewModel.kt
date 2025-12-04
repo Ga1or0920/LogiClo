@@ -1,5 +1,6 @@
 package com.example.myapplication.ui.dashboard
 
+import android.os.Build
 import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -7,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.myapplication.R
 import com.example.myapplication.data.repository.ClosetRepository
 import com.example.myapplication.data.repository.UserPreferencesRepository
+import com.example.myapplication.data.repository.WearFeedbackRepository
 import com.example.myapplication.data.weather.NoOpWeatherDebugController
 import com.example.myapplication.data.weather.WeatherRepository
 import com.example.myapplication.data.weather.WeatherDebugController
@@ -27,8 +29,14 @@ import com.example.myapplication.domain.usecase.FormalScoreCalculator
 import com.example.myapplication.domain.usecase.WeatherSuitabilityEvaluator
 import com.example.myapplication.util.time.DebugClockController
 import com.example.myapplication.util.time.InstantCompat
+import com.example.myapplication.util.time.ManualTimeOverride
 import com.example.myapplication.util.time.NoOpDebugClockController
+import java.text.SimpleDateFormat
 import java.time.Instant
+import java.time.LocalDateTime
+import java.time.ZoneId
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 import com.example.myapplication.ui.dashboard.model.AlertSeverity
 import com.example.myapplication.ui.dashboard.model.ClockDebugUiState
@@ -55,6 +63,7 @@ class DashboardViewModel(
     private val closetRepository: ClosetRepository,
     private val userPreferencesRepository: UserPreferencesRepository,
     private val weatherRepository: WeatherRepository,
+    private val wearFeedbackRepository: WearFeedbackRepository,
     private val weatherDebugController: WeatherDebugController,
     private val clockDebugController: DebugClockController,
     private val formalScoreCalculator: FormalScoreCalculator,
@@ -80,8 +89,8 @@ class DashboardViewModel(
         if (clockDebugController.isSupported || weatherDebugController.isSupported) WearFeedbackDebugUiState() else null
     )
 
-    private val _toastEvents = MutableSharedFlow<List<UiMessage>>(extraBufferCapacity = 1)
-    val toastEvents = _toastEvents.asSharedFlow()
+    private val _wearNotificationEvents = MutableSharedFlow<List<UiMessage>>(extraBufferCapacity = 1)
+    val wearNotificationEvents = _wearNotificationEvents.asSharedFlow()
 
     init {
         observeData()
@@ -202,15 +211,21 @@ class DashboardViewModel(
                 weatherDebugState.update { current ->
                     current?.let { state ->
                         if (override != null) {
+                            val appliedAt = state.lastAppliedAt ?: InstantCompat.nowOrNull()
                             state.copy(
                                 minTemperatureInput = formatTemperature(override.minTemperatureCelsius),
                                 maxTemperatureInput = formatTemperature(override.maxTemperatureCelsius),
                                 humidityInput = override.humidityPercent.toString(),
                                 isOverrideActive = true,
-                                errorMessage = null
+                                errorMessage = null,
+                                lastAppliedAt = appliedAt
                             )
                         } else {
-                            state.copy(isOverrideActive = false, errorMessage = null)
+                            state.copy(
+                                isOverrideActive = false,
+                                errorMessage = null,
+                                lastAppliedAt = null
+                            )
                         }
                     }
                 }
@@ -744,7 +759,7 @@ class DashboardViewModel(
                     lastUpdatedAt = InstantCompat.nowOrNull()
                 )
             }
-            _toastEvents.emit(messages)
+            _wearNotificationEvents.emit(messages)
         }
     }
 
@@ -756,6 +771,7 @@ class DashboardViewModel(
         private val closetRepository: ClosetRepository,
         private val userPreferencesRepository: UserPreferencesRepository,
         private val weatherRepository: WeatherRepository,
+        private val wearFeedbackRepository: WearFeedbackRepository,
         private val weatherDebugController: WeatherDebugController = NoOpWeatherDebugController,
         private val clockDebugController: DebugClockController = NoOpDebugClockController,
         private val formalScoreCalculator: FormalScoreCalculator = FormalScoreCalculator(),
@@ -770,6 +786,7 @@ class DashboardViewModel(
                     closetRepository = closetRepository,
                     userPreferencesRepository = userPreferencesRepository,
                     weatherRepository = weatherRepository,
+                    wearFeedbackRepository = wearFeedbackRepository,
                     weatherDebugController = weatherDebugController,
                     clockDebugController = clockDebugController,
                     formalScoreCalculator = formalScoreCalculator,

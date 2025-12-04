@@ -9,7 +9,7 @@ data class LaundryItemUi(
     val id: String,
     val name: String,
     val category: ClothingCategory,
-    @StringRes val categoryLabelResId: Int,
+    @param:StringRes val categoryLabelResId: Int,
     val colorHex: String,
     val status: LaundryStatus,
     val cleaningType: CleaningType,

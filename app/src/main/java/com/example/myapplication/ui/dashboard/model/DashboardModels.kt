@@ -56,7 +56,11 @@ data class WeatherDebugUiState(
 
 data class ClockDebugUiState(
     val isNextDayEnabled: Boolean = false,
-    val lastAppliedAt: Instant? = null
+    val manualOverrideInput: String = "",
+    val manualOverrideLabel: String? = null,
+    val isManualOverrideActive: Boolean = false,
+    val lastAppliedAt: Instant? = null,
+    val errorMessage: String? = null
 )
 
 data class WearFeedbackDebugUiState(

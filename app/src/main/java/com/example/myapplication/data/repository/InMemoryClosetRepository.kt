@@ -34,4 +34,14 @@ class InMemoryClosetRepository(
     override suspend fun delete(id: String) {
         itemsState.update { current -> current - id }
     }
+
+    override suspend fun getItem(id: String): ClothingItem? {
+        return itemsState.value[id]
+    }
+
+    override suspend fun getItems(ids: Collection<String>): List<ClothingItem> {
+        if (ids.isEmpty()) return emptyList()
+        val lookup = ids.toSet()
+        return itemsState.value.values.filter { it.id in lookup }
+    }
 }

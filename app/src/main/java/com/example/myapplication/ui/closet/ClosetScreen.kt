@@ -164,6 +164,13 @@ private fun ClosetItemCard(
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(text = item.name, style = MaterialTheme.typography.titleMedium)
+                    item.brand?.takeIf { it.isNotBlank() }?.let { brand ->
+                        Text(
+                            text = stringResource(id = R.string.closet_item_brand_label, brand),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     Text(
                         text = stringResource(id = item.categoryLabelResId),
                         style = MaterialTheme.typography.bodySmall,
@@ -215,6 +222,7 @@ private fun ClosetScreenPreview() {
                 ClosetItemUi(
                     id = it.id,
                     name = it.name,
+                    brand = it.brand,
                     category = it.category,
                     categoryLabelResId = it.category.labelResId(),
                     colorHex = it.colorHex,

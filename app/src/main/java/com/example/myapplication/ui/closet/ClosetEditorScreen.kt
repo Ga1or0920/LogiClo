@@ -82,6 +82,7 @@ fun ClosetEditorScreen(
         state = uiState,
         onClose = onClose,
         onNameChange = viewModel::onNameChanged,
+        onBrandChange = viewModel::onBrandChanged,
         onCategorySelected = viewModel::onCategorySelected,
         onColorSelected = viewModel::onColorSelected,
         onAlwaysWashChanged = viewModel::onAlwaysWashChanged,
@@ -100,6 +101,7 @@ private fun ClosetEditorContent(
     state: ClosetEditorUiState,
     onClose: () -> Unit,
     onNameChange: (String) -> Unit,
+    onBrandChange: (String) -> Unit,
     onCategorySelected: (CategoryOption) -> Unit,
     onColorSelected: (ColorOption) -> Unit,
     onAlwaysWashChanged: (Boolean) -> Unit,
@@ -154,6 +156,18 @@ private fun ClosetEditorContent(
                 label = { Text(stringResource(id = R.string.closet_editor_field_name_label)) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
+            )
+
+            SectionHeader(text = stringResource(id = R.string.closet_editor_section_brand))
+            OutlinedTextField(
+                value = state.brand,
+                onValueChange = onBrandChange,
+                label = { Text(stringResource(id = R.string.closet_editor_field_brand_label)) },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                supportingText = {
+                    Text(text = stringResource(id = R.string.closet_editor_field_brand_support))
+                }
             )
 
             SectionHeader(text = stringResource(id = R.string.closet_editor_section_category))
@@ -268,7 +282,7 @@ private fun ClosetEditorContent(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                SleeveLength.values()
+                SleeveLength.entries
                     .filterNot { it == SleeveLength.UNKNOWN }
                     .forEach { length ->
                         val selected = state.sleeveLength == length
@@ -287,7 +301,7 @@ private fun ClosetEditorContent(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Thickness.values()
+                Thickness.entries
                     .filterNot { it == Thickness.UNKNOWN }
                     .forEach { thickness ->
                         val selected = state.thickness == thickness
@@ -355,6 +369,7 @@ private fun cleaningOptions(): List<Pair<CleaningType, Int>> = listOf(
 private fun ClosetEditorPreview() {
     val sampleState = ClosetEditorUiState(
         name = "ネイビーポロ",
+        brand = "Sample Brand",
         selectedCategory = closetCategoryOptions().first { it.category == ClothingCategory.POLO },
         selectedColor = closetColorOptions().first { it.colorHex == "#0D3B66" },
         isAlwaysWash = false,
@@ -370,6 +385,7 @@ private fun ClosetEditorPreview() {
             state = sampleState,
             onClose = {},
             onNameChange = {},
+            onBrandChange = {},
             onCategorySelected = {},
             onColorSelected = {},
             onAlwaysWashChanged = {},

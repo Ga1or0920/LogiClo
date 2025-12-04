@@ -40,6 +40,7 @@ class ClosetViewModel(
                 ClosetItemUi(
                     id = item.id,
                     name = item.name,
+                    brand = item.brand,
                     category = item.category,
                     categoryLabelResId = item.category.labelResId(),
                     colorHex = item.colorHex,

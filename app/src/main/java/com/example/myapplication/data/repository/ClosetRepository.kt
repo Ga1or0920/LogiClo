@@ -10,4 +10,6 @@ interface ClosetRepository {
     suspend fun upsert(item: ClothingItem)
     suspend fun upsert(items: List<ClothingItem>)
     suspend fun delete(id: String)
+    suspend fun getItem(id: String): ClothingItem?
+    suspend fun getItems(ids: Collection<String>): List<ClothingItem>
 }

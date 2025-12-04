@@ -30,4 +30,13 @@ class RoomClosetRepository(
     override suspend fun delete(id: String) {
         clothingItemDao.deleteItem(id)
     }
+
+    override suspend fun getItem(id: String): ClothingItem? {
+        return clothingItemDao.getById(id)?.toDomain()
+    }
+
+    override suspend fun getItems(ids: Collection<String>): List<ClothingItem> {
+        if (ids.isEmpty()) return emptyList()
+        return clothingItemDao.getByIds(ids.toList()).map { it.toDomain() }
+    }
 }

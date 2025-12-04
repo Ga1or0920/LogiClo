@@ -17,4 +17,8 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    companion object {
+        const val EXTRA_TARGET_DESTINATION: String = "target_destination"
+    }
 }

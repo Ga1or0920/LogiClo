@@ -1,5 +1,6 @@
 package com.example.myapplication.ui.laundry
 
+import android.os.Build
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -16,6 +17,7 @@ import com.example.myapplication.ui.common.labelResId
 import com.example.myapplication.ui.laundry.model.LaundryItemUi
 import com.example.myapplication.ui.laundry.model.LaundryTab
 import com.example.myapplication.ui.laundry.model.LaundryUiState
+import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -27,8 +29,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-
-private val LAST_WORN_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("M/d H:mm")
 
 class LaundryViewModel(
     private val closetRepository: ClosetRepository,
@@ -54,7 +54,7 @@ class LaundryViewModel(
             it.cleaningType == CleaningType.DRY && (it.status == LaundryStatus.DIRTY || it.status == LaundryStatus.CLEANING)
         }
 
-        LaundryUiState(
+            LaundryUiState(
             isLoading = false,
             isProcessing = isProcessing,
             activeTab = tab,
@@ -190,8 +190,15 @@ class LaundryViewModel(
         colorHex = colorHex,
         status = status,
         cleaningType = cleaningType,
-        lastWornLabel = lastWornDate?.atZone(ZoneId.systemDefault())?.format(LAST_WORN_FORMATTER)
+        lastWornLabel = formatLastWorn(lastWornDate)
     )
+
+    private fun formatLastWorn(instant: Instant?): String? {
+        if (instant == null) return null
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return null
+        val formatter = DateTimeFormatter.ofPattern("M/d H:mm").withZone(ZoneId.systemDefault())
+        return formatter.format(instant)
+    }
 
     class Factory(
         private val closetRepository: ClosetRepository,

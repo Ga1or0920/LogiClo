@@ -13,8 +13,9 @@ import com.example.myapplication.domain.model.Thickness
 data class ClosetItemUi(
     val id: String,
     val name: String,
+    val brand: String? = null,
     val category: ClothingCategory,
-    @StringRes val categoryLabelResId: Int,
+    @param:StringRes val categoryLabelResId: Int,
     val colorHex: String,
     val status: LaundryStatus,
     val currentWears: Int,
@@ -32,6 +33,7 @@ data class ClosetUiState(
 
 data class ClosetEditorUiState(
     val name: String = "",
+    val brand: String = "",
     val selectedCategory: CategoryOption? = null,
     val selectedColor: ColorOption? = null,
     val isAlwaysWash: Boolean = false,
@@ -55,7 +57,7 @@ data class ClosetEditorUiState(
 
 data class CategoryOption(
     val category: ClothingCategory,
-    @StringRes val labelResId: Int,
+    @param:StringRes val labelResId: Int,
     val type: ClothingType,
     val defaultSleeve: SleeveLength,
     val defaultThickness: Thickness,
@@ -66,6 +68,6 @@ data class CategoryOption(
 
 data class ColorOption(
     val colorHex: String,
-    @StringRes val labelResId: Int,
+    @param:StringRes val labelResId: Int,
     val group: ColorGroup
 )
