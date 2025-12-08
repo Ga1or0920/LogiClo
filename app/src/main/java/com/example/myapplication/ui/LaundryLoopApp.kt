@@ -9,13 +9,16 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.navArgument
 import com.example.myapplication.ui.closet.ClosetDestinations
 import com.example.myapplication.ui.closet.ClosetEditorScreen
 import com.example.myapplication.ui.closet.ClosetScreen
 import com.example.myapplication.ui.closet.navigateToAddClosetItem
+import com.example.myapplication.ui.closet.navigateToEditClosetItem
 import com.example.myapplication.ui.dashboard.DashboardScreen
 import com.example.myapplication.ui.laundry.LaundryScreen
 import com.example.myapplication.ui.navigation.AppDestination
@@ -67,17 +70,30 @@ fun LaundryLoopApp() {
                 }
                 composable(AppDestination.Closet.route) {
                     ClosetScreen(
-                        onAddItem = { navController.navigateToAddClosetItem() }
+                        onAddItem = { navController.navigateToAddClosetItem() },
+                        onEditItem = { itemId -> navController.navigateToEditClosetItem(itemId) }
                     )
                 }
                 composable(ClosetDestinations.AddItem) {
                     ClosetEditorScreen(
+                        existingItemId = null,
                         onClose = { navController.popBackStack() },
                         onSaved = { navController.popBackStack() }
                     )
                 }
                 composable(AppDestination.Laundry.route) {
                     LaundryScreen()
+                }
+                composable(
+                    route = ClosetDestinations.EditItem,
+                    arguments = listOf(navArgument(ClosetDestinations.EditItemArg) { type = NavType.StringType })
+                ) { backStackEntry ->
+                    val itemId = backStackEntry.arguments?.getString(ClosetDestinations.EditItemArg)
+                    ClosetEditorScreen(
+                        existingItemId = itemId,
+                        onClose = { navController.popBackStack() },
+                        onSaved = { navController.popBackStack() }
+                    )
                 }
             }
         }

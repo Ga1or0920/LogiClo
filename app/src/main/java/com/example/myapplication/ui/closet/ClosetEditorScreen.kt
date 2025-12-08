@@ -24,6 +24,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RangeSlider
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
@@ -45,6 +46,7 @@ import com.example.myapplication.domain.model.CleaningType
 import com.example.myapplication.domain.model.ClothingCategory
 import com.example.myapplication.domain.model.SleeveLength
 import com.example.myapplication.domain.model.Thickness
+import com.example.myapplication.domain.usecase.ComfortRangeDefaults
 import com.example.myapplication.ui.common.labelResId
 import com.example.myapplication.ui.components.ClothingIllustrationSwatch
 import com.example.myapplication.ui.closet.closetCategoryOptions
@@ -55,9 +57,12 @@ import com.example.myapplication.ui.closet.model.ColorOption
 import com.example.myapplication.ui.providers.LocalAppContainer
 import com.example.myapplication.ui.theme.MyApplicationTheme
 import kotlin.math.roundToInt
+import kotlin.ranges.ClosedFloatingPointRange
+import java.util.Locale
 
 @Composable
 fun ClosetEditorScreen(
+    existingItemId: String? = null,
     onClose: () -> Unit,
     onSaved: () -> Unit,
     modifier: Modifier = Modifier
@@ -66,7 +71,8 @@ fun ClosetEditorScreen(
     val viewModel: ClosetEditorViewModel = viewModel(
         factory = ClosetEditorViewModel.Factory(
             closetRepository = appContainer.closetRepository,
-            userPreferencesRepository = appContainer.userPreferencesRepository
+            userPreferencesRepository = appContainer.userPreferencesRepository,
+            existingItemId = existingItemId
         )
     )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -87,6 +93,8 @@ fun ClosetEditorScreen(
         onColorSelected = viewModel::onColorSelected,
         onAlwaysWashChanged = viewModel::onAlwaysWashChanged,
         onMaxWearsChanged = viewModel::onMaxWearsChanged,
+        onComfortRangeChanged = viewModel::onComfortRangeChanged,
+        onComfortRangeReset = viewModel::onComfortRangeReset,
         onCleaningTypeChanged = viewModel::onCleaningTypeChanged,
         onSleeveLengthSelected = viewModel::onSleeveLengthSelected,
         onThicknessSelected = viewModel::onThicknessSelected,
@@ -106,6 +114,8 @@ private fun ClosetEditorContent(
     onColorSelected: (ColorOption) -> Unit,
     onAlwaysWashChanged: (Boolean) -> Unit,
     onMaxWearsChanged: (Int) -> Unit,
+    onComfortRangeChanged: (ClosedFloatingPointRange<Float>) -> Unit,
+    onComfortRangeReset: () -> Unit,
     onCleaningTypeChanged: (CleaningType) -> Unit,
     onSleeveLengthSelected: (SleeveLength) -> Unit,
     onThicknessSelected: (Thickness) -> Unit,
@@ -115,7 +125,14 @@ private fun ClosetEditorContent(
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text(text = stringResource(id = R.string.closet_editor_title)) },
+                title = {
+                    val titleRes = if (state.isEditMode) {
+                        R.string.closet_editor_title_edit
+                    } else {
+                        R.string.closet_editor_title
+                    }
+                    Text(text = stringResource(id = titleRes))
+                },
                 navigationIcon = {
                     IconButton(onClick = onClose) {
                         Icon(
@@ -126,10 +143,10 @@ private fun ClosetEditorContent(
                 },
                 actions = {
                     TextButton(onClick = onSave, enabled = state.canSave) {
-                        val textRes = if (state.isSaving) {
-                            R.string.closet_editor_saving
-                        } else {
-                            R.string.closet_editor_save
+                        val textRes = when {
+                            state.isSaving -> R.string.closet_editor_saving
+                            state.isEditMode -> R.string.closet_editor_save_edit
+                            else -> R.string.closet_editor_save
                         }
                         Text(text = stringResource(id = textRes))
                     }
@@ -213,6 +230,40 @@ private fun ClosetEditorContent(
                         iconSize = 64.dp
                     )
                 }
+            }
+
+            if (state.selectedCategory != null) {
+                SectionHeader(text = stringResource(id = R.string.closet_editor_section_comfort))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = stringResource(
+                            id = R.string.closet_editor_comfort_range_label,
+                            formatComfortTemperature(state.comfortMinCelsius),
+                            formatComfortTemperature(state.comfortMaxCelsius)
+                        ),
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    if (state.isComfortRangeCustomized) {
+                        TextButton(onClick = onComfortRangeReset) {
+                            Text(text = stringResource(id = R.string.closet_editor_comfort_reset))
+                        }
+                    }
+                }
+                Text(
+                    text = stringResource(id = R.string.closet_editor_comfort_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                RangeSlider(
+                    value = state.comfortMinCelsius.toFloat()..state.comfortMaxCelsius.toFloat(),
+                    onValueChange = onComfortRangeChanged,
+                    valueRange = ComfortRangeDefaults.MIN_LIMIT.toFloat()..ComfortRangeDefaults.MAX_LIMIT.toFloat(),
+                    steps = 0
+                )
             }
 
             SectionHeader(text = stringResource(id = R.string.closet_editor_section_laundry))
@@ -364,6 +415,9 @@ private fun cleaningOptions(): List<Pair<CleaningType, Int>> = listOf(
     CleaningType.DRY
 ).map { it to it.labelResId() }
 
+private fun formatComfortTemperature(value: Double): String =
+    String.format(Locale.JAPAN, "%.1f", value)
+
 @Preview(showBackground = true)
 @Composable
 private fun ClosetEditorPreview() {
@@ -374,6 +428,8 @@ private fun ClosetEditorPreview() {
         selectedColor = closetColorOptions().first { it.colorHex == "#0D3B66" },
         isAlwaysWash = false,
         maxWears = 3,
+        comfortMinCelsius = 20.0,
+        comfortMaxCelsius = 30.0,
         cleaningType = CleaningType.HOME,
         sleeveLength = SleeveLength.SHORT,
         thickness = Thickness.THIN,
@@ -390,6 +446,8 @@ private fun ClosetEditorPreview() {
             onColorSelected = {},
             onAlwaysWashChanged = {},
             onMaxWearsChanged = {},
+            onComfortRangeChanged = {},
+            onComfortRangeReset = {},
             onCleaningTypeChanged = {},
             onSleeveLengthSelected = {},
             onThicknessSelected = {},

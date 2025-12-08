@@ -1,5 +1,7 @@
 package com.example.myapplication.ui.closet
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,36 +12,52 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.FilterList
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.RadioButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.myapplication.data.sample.SampleData
 import com.example.myapplication.domain.model.CleaningType
+import com.example.myapplication.domain.model.ClothingCategory
+import com.example.myapplication.domain.model.ClothingType
+import com.example.myapplication.domain.model.ColorGroup
 import com.example.myapplication.domain.model.LaundryStatus
 import com.example.myapplication.R
 import com.example.myapplication.ui.closet.model.ClosetItemUi
 import com.example.myapplication.ui.closet.model.ClosetUiState
+import com.example.myapplication.ui.closet.model.ClosetFilters
 import com.example.myapplication.ui.components.ClothingIllustrationSwatch
 import com.example.myapplication.ui.providers.LocalAppContainer
 import com.example.myapplication.ui.theme.MyApplicationTheme
@@ -48,6 +66,7 @@ import com.example.myapplication.ui.common.labelResId
 @Composable
 fun ClosetScreen(
     onAddItem: () -> Unit,
+    onEditItem: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val appContainer = LocalAppContainer.current
@@ -70,7 +89,12 @@ fun ClosetScreen(
         ClosetContent(
             state = state,
             onFilterSelected = viewModel::onFilterSelected,
+            onFilterButtonClicked = viewModel::onFilterButtonClicked,
+            onFilterDialogDismissed = viewModel::onFilterDialogDismissed,
+            onFiltersApplied = viewModel::onFiltersApplied,
+            onFiltersCleared = viewModel::onFiltersCleared,
             onDeleteItem = viewModel::onDeleteItem,
+            onEditItem = onEditItem,
             modifier = modifier
                 .padding(innerPadding)
                 .padding(horizontal = 16.dp, vertical = 12.dp)
@@ -82,7 +106,12 @@ fun ClosetScreen(
 private fun ClosetContent(
     state: ClosetUiState,
     onFilterSelected: (LaundryStatus) -> Unit,
+    onFilterButtonClicked: () -> Unit,
+    onFilterDialogDismissed: () -> Unit,
+    onFiltersApplied: (ClosetFilters) -> Unit,
+    onFiltersCleared: () -> Unit,
     onDeleteItem: (String) -> Unit,
+    onEditItem: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val statuses = listOf(LaundryStatus.CLOSET, LaundryStatus.DIRTY, LaundryStatus.CLEANING)
@@ -117,6 +146,25 @@ private fun ClosetContent(
             }
         }
 
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End
+        ) {
+            val buttonText = if (state.hasActiveFilters) {
+                stringResource(id = R.string.closet_filter_button_active, state.activeFilterCount)
+            } else {
+                stringResource(id = R.string.closet_filter_button)
+            }
+            FilledTonalButton(onClick = onFilterButtonClicked) {
+                Icon(
+                    imageVector = Icons.Outlined.FilterList,
+                    contentDescription = buttonText
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(text = buttonText)
+            }
+        }
+
         if (state.isLoading) {
             Text(text = stringResource(id = R.string.closet_loading), style = MaterialTheme.typography.bodyMedium)
         } else if (state.items.isEmpty()) {
@@ -126,7 +174,19 @@ private fun ClosetContent(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         } else {
-            ClosetItemList(items = state.items, onDeleteItem = onDeleteItem)
+            ClosetItemList(items = state.items, onDeleteItem = onDeleteItem, onEditItem = onEditItem)
+        }
+
+        if (state.isFilterDialogVisible) {
+            ClosetFilterDialog(
+                filters = state.filters,
+                availableCategories = state.availableCategories,
+                availableTypes = state.availableTypes,
+                availableColorGroups = state.availableColorGroups,
+                onDismiss = onFilterDialogDismissed,
+                onApply = onFiltersApplied,
+                onClear = onFiltersCleared
+            )
         }
     }
 }
@@ -134,22 +194,168 @@ private fun ClosetContent(
 @Composable
 private fun ClosetItemList(
     items: List<ClosetItemUi>,
-    onDeleteItem: (String) -> Unit
+    onDeleteItem: (String) -> Unit,
+    onEditItem: (String) -> Unit
 ) {
     LazyColumn(
         verticalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(bottom = 80.dp)
     ) {
         items(items, key = { it.id }) { item ->
-            ClosetItemCard(item = item, onDeleteItem = onDeleteItem)
+            ClosetItemCard(item = item, onDeleteItem = onDeleteItem, onEditItem = onEditItem)
         }
+    }
+}
+
+@Composable
+private fun ClosetFilterDialog(
+    filters: ClosetFilters,
+    availableCategories: List<ClothingCategory>,
+    availableTypes: List<ClothingType>,
+    availableColorGroups: List<ColorGroup>,
+    onDismiss: () -> Unit,
+    onApply: (ClosetFilters) -> Unit,
+    onClear: () -> Unit
+) {
+    var selectedCategory by remember(filters) { mutableStateOf(filters.category) }
+    var selectedType by remember(filters) { mutableStateOf(filters.type) }
+    var selectedColorGroup by remember(filters) { mutableStateOf(filters.colorGroup) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = stringResource(id = R.string.closet_filter_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                val categoryOptions = availableCategories.map { category ->
+                    category to stringResource(id = category.labelResId())
+                }
+                FilterOptionGroup(
+                    label = stringResource(id = R.string.closet_filter_category),
+                    options = categoryOptions,
+                    selectedOption = selectedCategory,
+                    onOptionSelected = { selectedCategory = it },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                val typeOptions = availableTypes.map { type ->
+                    type to stringResource(id = type.labelResId())
+                }
+                FilterOptionGroup(
+                    label = stringResource(id = R.string.closet_filter_type),
+                    options = typeOptions,
+                    selectedOption = selectedType,
+                    onOptionSelected = { selectedType = it },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                val colorGroupOptions = availableColorGroups.map { colorGroup ->
+                    colorGroup to stringResource(id = colorGroup.labelResId())
+                }
+                FilterOptionGroup(
+                    label = stringResource(id = R.string.closet_filter_color_group),
+                    options = colorGroupOptions,
+                    selectedOption = selectedColorGroup,
+                    onOptionSelected = { selectedColorGroup = it },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onApply(
+                        ClosetFilters(
+                            category = selectedCategory,
+                            type = selectedType,
+                            colorGroup = selectedColorGroup
+                        )
+                    )
+                }
+            ) {
+                Text(text = stringResource(id = R.string.closet_filter_apply))
+            }
+        },
+        dismissButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(
+                    onClick = {
+                        selectedCategory = null
+                        selectedType = null
+                        selectedColorGroup = null
+                        onClear()
+                    }
+                ) {
+                    Text(text = stringResource(id = R.string.closet_filter_clear))
+                }
+                TextButton(onClick = onDismiss) {
+                    Text(text = stringResource(id = R.string.common_cancel))
+                }
+            }
+        }
+    )
+}
+
+@Composable
+private fun <T> FilterOptionGroup(
+    label: String,
+    options: List<Pair<T, String>>,
+    selectedOption: T?,
+    onOptionSelected: (T?) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(text = label, style = MaterialTheme.typography.titleSmall)
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            FilterOptionRow(
+                text = stringResource(id = R.string.closet_filter_all),
+                selected = selectedOption == null,
+                onClick = { onOptionSelected(null) }
+            )
+            options.forEach { (option, labelText) ->
+                FilterOptionRow(
+                    text = labelText,
+                    selected = selectedOption == option,
+                    onClick = { onOptionSelected(option) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FilterOptionRow(
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                role = Role.RadioButton,
+                onClick = onClick
+            )
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        RadioButton(
+            selected = selected,
+            onClick = null
+        )
+        Text(text = text, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
 @Composable
 private fun ClosetItemCard(
     item: ClosetItemUi,
-    onDeleteItem: (String) -> Unit
+    onDeleteItem: (String) -> Unit,
+    onEditItem: (String) -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -175,6 +381,12 @@ private fun ClosetItemCard(
                         text = stringResource(id = item.categoryLabelResId),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                IconButton(onClick = { onEditItem(item.id) }) {
+                    Icon(
+                        imageVector = Icons.Outlined.Edit,
+                        contentDescription = stringResource(id = R.string.closet_edit_item)
                     )
                 }
                 IconButton(onClick = { onDeleteItem(item.id) }) {
@@ -241,7 +453,12 @@ private fun ClosetScreenPreview() {
                 statusCounts = sampleItems.groupingBy { it.status }.eachCount()
             ),
             onFilterSelected = {},
-            onDeleteItem = {}
+            onFilterButtonClicked = {},
+            onFilterDialogDismissed = {},
+            onFiltersApplied = {},
+            onFiltersCleared = {},
+            onDeleteItem = {},
+            onEditItem = {}
         )
     }
 }

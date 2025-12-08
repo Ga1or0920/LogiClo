@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -22,8 +23,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.annotation.StringRes
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.BugReport
-import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -33,7 +34,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarDefaults
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -45,6 +48,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -57,7 +61,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.example.myapplication.util.time.InstantCompat
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.layout.width
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.myapplication.R
@@ -65,12 +68,14 @@ import com.example.myapplication.data.InMemoryAppContainer
 import com.example.myapplication.data.sample.SampleData
 import com.example.myapplication.domain.model.ClothingItem
 import com.example.myapplication.domain.model.EnvironmentMode
+import com.example.myapplication.domain.model.ColorGroup
 import com.example.myapplication.domain.model.TpoMode
 import com.example.myapplication.domain.model.WeatherSnapshot
-import com.example.myapplication.ui.common.UiMessage
 import com.example.myapplication.ui.common.UiMessageArg
 import com.example.myapplication.ui.common.labelResId
 import com.example.myapplication.ui.components.ClothingIllustrationSwatch
+import com.example.myapplication.ui.common.UiMessage
+import com.example.myapplication.ui.closet.closetColorOptions
 import com.example.myapplication.ui.dashboard.model.AlertSeverity
 import com.example.myapplication.ui.dashboard.model.DashboardUiState
 import com.example.myapplication.ui.dashboard.model.InventoryAlert
@@ -159,56 +164,45 @@ private fun DashboardContent(
     var selectedTabIndex by rememberSaveable { mutableIntStateOf(DashboardTab.OVERVIEW.ordinal) }
     val selectedTab = tabs[selectedTabIndex]
 
-    Scaffold(
-        modifier = modifier.fillMaxSize(),
-        bottomBar = {
-            NavigationBar {
-                tabs.forEach { tab ->
-                    NavigationBarItem(
-                        selected = selectedTab == tab,
-                        onClick = { selectedTabIndex = tab.ordinal },
-                        icon = {
-                            Icon(
-                                imageVector = tab.icon,
-                                contentDescription = stringResource(id = tab.labelRes)
-                            )
-                        },
-                        label = { Text(text = stringResource(id = tab.labelRes)) }
-                    )
-                }
+    Column(modifier = modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+        ) {
+            when (selectedTab) {
+                DashboardTab.OVERVIEW -> OverviewTabContent(
+                    state = state,
+                    onModeSelected = onModeSelected,
+                    onEnvironmentSelected = onEnvironmentSelected,
+                    onSuggestionSelected = onSuggestionSelected,
+                    onWearClicked = onWearClicked,
+                    onRerollSuggestion = onRerollSuggestion,
+                    onReviewInventory = onReviewInventory,
+                    onRefreshWeather = onRefreshWeather,
+                    modifier = Modifier.fillMaxSize()
+                )
+
+                DashboardTab.DEBUG -> DebugTabContent(
+                    weatherDebug = state.weatherDebug,
+                    clockDebug = state.clockDebug,
+                    wearFeedbackDebug = state.wearFeedbackDebug,
+                    onClockDebugNextDayChanged = onClockDebugNextDayChanged,
+                    onDebugMinTempChanged = onDebugMinTempChanged,
+                    onDebugMaxTempChanged = onDebugMaxTempChanged,
+                    onDebugHumidityChanged = onDebugHumidityChanged,
+                    onApplyWeatherDebug = onApplyWeatherDebug,
+                    onClearWeatherDebug = onClearWeatherDebug,
+                    modifier = Modifier.fillMaxSize()
+                )
             }
         }
-    ) { innerPadding ->
-        when (selectedTab) {
-            DashboardTab.OVERVIEW -> OverviewTabContent(
-                state = state,
-                onModeSelected = onModeSelected,
-                onEnvironmentSelected = onEnvironmentSelected,
-                onSuggestionSelected = onSuggestionSelected,
-                onWearClicked = onWearClicked,
-                onRerollSuggestion = onRerollSuggestion,
-                onReviewInventory = onReviewInventory,
-                onRefreshWeather = onRefreshWeather,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-            )
 
-            DashboardTab.DEBUG -> DebugTabContent(
-                weatherDebug = state.weatherDebug,
-                clockDebug = state.clockDebug,
-                wearFeedbackDebug = state.wearFeedbackDebug,
-                onClockDebugNextDayChanged = onClockDebugNextDayChanged,
-                onDebugMinTempChanged = onDebugMinTempChanged,
-                onDebugMaxTempChanged = onDebugMaxTempChanged,
-                onDebugHumidityChanged = onDebugHumidityChanged,
-                onApplyWeatherDebug = onApplyWeatherDebug,
-                onClearWeatherDebug = onClearWeatherDebug,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-            )
-        }
+        DashboardTabSelector(
+            tabs = tabs,
+            selectedTab = selectedTab,
+            onTabSelected = { selectedTabIndex = it.ordinal }
+        )
     }
 
     if (state.isInventoryReviewVisible) {
@@ -396,8 +390,43 @@ private fun DebugTabContent(
 }
 
 private enum class DashboardTab(@param:StringRes val labelRes: Int, val icon: ImageVector) {
-    OVERVIEW(R.string.dashboard_tab_overview, Icons.Filled.Dashboard),
-    DEBUG(R.string.dashboard_tab_debug, Icons.Filled.BugReport)
+    OVERVIEW(R.string.dashboard_tab_overview, Icons.Filled.Home),
+    DEBUG(R.string.dashboard_tab_debug, Icons.Filled.Build)
+}
+
+@Composable
+private fun DashboardTabSelector(
+    tabs: List<DashboardTab>,
+    selectedTab: DashboardTab,
+    onTabSelected: (DashboardTab) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    NavigationBar(
+        modifier = modifier.fillMaxWidth(),
+        containerColor = MaterialTheme.colorScheme.surface,
+        tonalElevation = 0.dp,
+        windowInsets = NavigationBarDefaults.windowInsets
+    ) {
+        tabs.forEach { tab ->
+            NavigationBarItem(
+                selected = selectedTab == tab,
+                onClick = { onTabSelected(tab) },
+                icon = {
+                    Icon(
+                        imageVector = tab.icon,
+                        contentDescription = stringResource(id = tab.labelRes)
+                    )
+                },
+                label = { Text(text = stringResource(id = tab.labelRes)) },
+                alwaysShowLabel = true,
+                colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = MaterialTheme.colorScheme.primary,
+                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                    indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                )
+            )
+        }
+    }
 }
 
 @Composable
@@ -405,19 +434,23 @@ private fun ModeSwitcher(
     currentMode: TpoMode,
     onModeSelected: (TpoMode) -> Unit
 ) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        FilterChip(
-            selected = currentMode == TpoMode.CASUAL,
-            onClick = { onModeSelected(TpoMode.CASUAL) },
-            label = { Text(stringResource(id = R.string.dashboard_mode_casual)) }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = stringResource(id = R.string.dashboard_mode_selector_label),
+            style = MaterialTheme.typography.titleSmall
         )
-        FilterChip(
-            selected = currentMode == TpoMode.OFFICE,
-            onClick = { onModeSelected(TpoMode.OFFICE) },
-            label = { Text(stringResource(id = R.string.dashboard_mode_office)) }
-        )
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            FilterChip(
+                selected = currentMode == TpoMode.CASUAL,
+                onClick = { onModeSelected(TpoMode.CASUAL) },
+                label = { Text(stringResource(id = R.string.dashboard_mode_casual)) }
+            )
+            FilterChip(
+                selected = currentMode == TpoMode.OFFICE,
+                onClick = { onModeSelected(TpoMode.OFFICE) },
+                label = { Text(stringResource(id = R.string.dashboard_mode_office)) }
+            )
+        }
     }
 }
 
@@ -919,21 +952,27 @@ private fun OutfitSuggestionSection(
     selectedSuggestion: OutfitSuggestion?,
     onSuggestionSelected: (OutfitSuggestion) -> Unit
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
         Text(
             text = stringResource(id = R.string.dashboard_suggestions_section_title),
             style = MaterialTheme.typography.titleMedium
         )
         LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            contentPadding = PaddingValues(horizontal = 4.dp)
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(end = 16.dp)
         ) {
-            items(suggestions, key = { "${it.top.id}-${it.bottom.id}" }) { suggestion ->
+            items(suggestions, key = { "${it.top.id}-${it.bottom.id}-${it.outer?.id ?: "none"}" }) { suggestion ->
                 val isSelected = suggestion == selectedSuggestion
                 OutfitSuggestionCard(
                     suggestion = suggestion,
                     selected = isSelected,
-                    onClick = { onSuggestionSelected(suggestion) }
+                    onClick = { onSuggestionSelected(suggestion) },
+                    modifier = Modifier
+                        .widthIn(min = 260.dp, max = 320.dp)
                 )
             }
         }
@@ -944,12 +983,11 @@ private fun OutfitSuggestionSection(
 private fun OutfitSuggestionCard(
     suggestion: OutfitSuggestion,
     selected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Card(
-        modifier = Modifier
-            .width(280.dp)
-            .clickable(onClick = onClick),
+        modifier = modifier.clickable(onClick = onClick),
         border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
@@ -966,6 +1004,13 @@ private fun OutfitSuggestionCard(
                 label = stringResource(id = R.string.dashboard_suggestion_bottom),
                 item = suggestion.bottom
             )
+            suggestion.outer?.let { outerItem ->
+                HorizontalDivider()
+                SuggestionItemPreview(
+                    label = stringResource(id = R.string.dashboard_suggestion_outer),
+                    item = outerItem
+                )
+            }
             SuggestionMeta(text = stringResource(id = R.string.dashboard_suggestion_formality, suggestion.totalScore))
         }
     }
@@ -973,6 +1018,16 @@ private fun OutfitSuggestionCard(
 
 @Composable
 private fun SuggestionItemPreview(label: String, item: ClothingItem) {
+    val colorOption = remember(item.colorHex) {
+        closetColorOptions().firstOrNull { option ->
+            option.colorHex.equals(item.colorHex, ignoreCase = true)
+        }
+    }
+    val colorLabel = when {
+        colorOption != null -> stringResource(id = colorOption.labelResId)
+        item.colorGroup != ColorGroup.UNKNOWN -> stringResource(id = item.colorGroup.labelResId())
+        else -> item.colorHex.removePrefix("#").uppercase(Locale.getDefault())
+    }
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -984,7 +1039,10 @@ private fun SuggestionItemPreview(label: String, item: ClothingItem) {
             swatchSize = 72.dp,
             iconSize = 48.dp
         )
-        Column {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
             Text(text = label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(text = item.name, style = MaterialTheme.typography.titleMedium)
             Text(
@@ -993,10 +1051,7 @@ private fun SuggestionItemPreview(label: String, item: ClothingItem) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
-                text = stringResource(
-                    id = R.string.dashboard_suggestion_color,
-                    item.colorHex.removePrefix("#").uppercase()
-                ),
+                text = stringResource(id = R.string.dashboard_suggestion_color, colorLabel),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -1151,11 +1206,13 @@ private fun DashboardScreenPreview() {
                         OutfitSuggestion(
                             top = SampleData.closetItems[0],
                             bottom = SampleData.closetItems[1],
+                            outer = SampleData.closetItems[6],
                             totalScore = 7
                         ),
                         OutfitSuggestion(
                             top = SampleData.closetItems[2],
                             bottom = SampleData.closetItems[3],
+                            outer = SampleData.closetItems[6],
                             totalScore = 5
                         )
                     ),
@@ -1203,6 +1260,7 @@ private fun DashboardScreenPreview() {
                     selectedSuggestion = OutfitSuggestion(
                         top = SampleData.closetItems[0],
                         bottom = SampleData.closetItems[1],
+                        outer = SampleData.closetItems[6],
                         totalScore = 7
                     ),
                     isRefreshingWeather = false,

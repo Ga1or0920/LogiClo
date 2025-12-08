@@ -21,6 +21,7 @@ data class InventoryAlert(
 data class OutfitSuggestion(
     val top: ClothingItem,
     val bottom: ClothingItem,
+    val outer: ClothingItem? = null,
     val totalScore: Int
 )
 

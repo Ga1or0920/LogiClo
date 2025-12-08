@@ -7,10 +7,18 @@ import androidx.navigation.NavController
  */
 object ClosetDestinations {
     const val AddItem = "closet/add"
+    const val EditItem = "closet/edit/{itemId}"
+    const val EditItemArg = "itemId"
 }
 
 fun NavController.navigateToAddClosetItem() {
     navigate(ClosetDestinations.AddItem) {
+        launchSingleTop = true
+    }
+}
+
+fun NavController.navigateToEditClosetItem(itemId: String) {
+    navigate("closet/edit/$itemId") {
         launchSingleTop = true
     }
 }

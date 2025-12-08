@@ -15,28 +15,37 @@ import com.example.myapplication.domain.model.LaundryStatus
 import com.example.myapplication.domain.model.Pattern
 import com.example.myapplication.domain.model.SleeveLength
 import com.example.myapplication.domain.model.Thickness
+import com.example.myapplication.domain.usecase.ComfortRangeDefaults
 import com.example.myapplication.ui.closet.model.CategoryOption
 import com.example.myapplication.ui.closet.model.ClosetEditorUiState
 import com.example.myapplication.ui.closet.model.ColorOption
+import com.example.myapplication.ui.common.labelResId
 import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.update
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
+import kotlin.ranges.ClosedFloatingPointRange
+import kotlin.math.abs
 
 private const val MIN_WEAR_COUNT = 2
 private const val MAX_WEAR_COUNT = 30
 
 class ClosetEditorViewModel(
     private val closetRepository: ClosetRepository,
-    private val userPreferencesRepository: UserPreferencesRepository
+    private val userPreferencesRepository: UserPreferencesRepository,
+    private val existingItemId: String?
 ) : ViewModel() {
 
     private val categoryOptions = closetCategoryOptions()
     private val colorOptions = closetColorOptions()
     private var learnedDefaultMaxWears: Map<ClothingCategory, Int> = emptyMap()
+    private var editingItem: ClothingItem? = null
 
     private val _uiState = MutableStateFlow(
         ClosetEditorUiState(
@@ -50,6 +59,11 @@ class ClosetEditorViewModel(
         viewModelScope.launch {
             userPreferencesRepository.observe().collect { preferences ->
                 learnedDefaultMaxWears = preferences.defaultMaxWears
+            }
+        }
+        existingItemId?.let { id ->
+            viewModelScope.launch {
+                loadExistingItem(id)
             }
         }
     }
@@ -70,6 +84,11 @@ class ClosetEditorViewModel(
         _uiState.update { state ->
             val initialAlwaysWash = resolveInitialAlwaysWash(option)
             val initialMaxWears = if (initialAlwaysWash) 1 else resolveBaseMaxWears(option)
+            val recommendedRange = ComfortRangeDefaults.forAttributes(
+                type = option.type,
+                thickness = option.defaultThickness,
+                sleeveLength = option.defaultSleeve
+            )
             state.copy(
                 selectedCategory = option,
                 type = option.type,
@@ -77,7 +96,10 @@ class ClosetEditorViewModel(
                 thickness = option.defaultThickness,
                 cleaningType = option.defaultCleaning,
                 isAlwaysWash = initialAlwaysWash,
-                maxWears = initialMaxWears
+                maxWears = initialMaxWears,
+                comfortMinCelsius = recommendedRange.first,
+                comfortMaxCelsius = recommendedRange.second,
+                isComfortRangeCustomized = false
             )
         }
     }
@@ -104,6 +126,35 @@ class ClosetEditorViewModel(
         }
     }
 
+    fun onComfortRangeChanged(range: ClosedFloatingPointRange<Float>) {
+        val minValue = normalizeComfortValue(range.start)
+        val maxValue = normalizeComfortValue(range.endInclusive)
+        val resolvedMin = min(minValue, maxValue)
+        val resolvedMax = max(minValue, maxValue)
+        _uiState.update { state ->
+            state.copy(
+                comfortMinCelsius = resolvedMin,
+                comfortMaxCelsius = resolvedMax,
+                isComfortRangeCustomized = true
+            )
+        }
+    }
+
+    fun onComfortRangeReset() {
+        _uiState.update { state ->
+            val recommended = ComfortRangeDefaults.forAttributes(
+                type = state.type,
+                thickness = state.thickness,
+                sleeveLength = state.sleeveLength
+            )
+            state.copy(
+                comfortMinCelsius = recommended.first,
+                comfortMaxCelsius = recommended.second,
+                isComfortRangeCustomized = false
+            )
+        }
+    }
+
     fun onCleaningTypeChanged(type: CleaningType) {
         _uiState.update { state ->
             state.copy(cleaningType = type)
@@ -112,13 +163,31 @@ class ClosetEditorViewModel(
 
     fun onSleeveLengthSelected(length: SleeveLength) {
         _uiState.update { state ->
-            state.copy(sleeveLength = length)
+            val recommended = if (state.isComfortRangeCustomized) null else ComfortRangeDefaults.forAttributes(
+                type = state.type,
+                thickness = state.thickness,
+                sleeveLength = length
+            )
+            state.copy(
+                sleeveLength = length,
+                comfortMinCelsius = recommended?.first ?: state.comfortMinCelsius,
+                comfortMaxCelsius = recommended?.second ?: state.comfortMaxCelsius
+            )
         }
     }
 
     fun onThicknessSelected(thickness: Thickness) {
         _uiState.update { state ->
-            state.copy(thickness = thickness)
+            val recommended = if (state.isComfortRangeCustomized) null else ComfortRangeDefaults.forAttributes(
+                type = state.type,
+                thickness = thickness,
+                sleeveLength = state.sleeveLength
+            )
+            state.copy(
+                thickness = thickness,
+                comfortMinCelsius = recommended?.first ?: state.comfortMinCelsius,
+                comfortMaxCelsius = recommended?.second ?: state.comfortMaxCelsius
+            )
         }
     }
 
@@ -168,38 +237,155 @@ class ClosetEditorViewModel(
 
         val maxWear = if (state.isAlwaysWash) 1 else state.maxWears
         val brand = state.brand.trim().takeIf { it.isNotEmpty() }
+        val comfortMin = min(state.comfortMinCelsius, state.comfortMaxCelsius)
+        val comfortMax = max(state.comfortMinCelsius, state.comfortMaxCelsius)
+        val existing = editingItem
+        return if (existing != null) {
+            val adjustedCurrent = existing.currentWears.coerceAtMost(maxWear)
+            val updated = existing.copy(
+                name = state.name.trim(),
+                category = categoryOption.category,
+                type = state.type,
+                sleeveLength = state.sleeveLength,
+                thickness = state.thickness,
+                comfortMinCelsius = comfortMin,
+                comfortMaxCelsius = comfortMax,
+                colorHex = colorOption.colorHex,
+                colorGroup = colorOption.group,
+                pattern = state.pattern,
+                maxWears = maxWear,
+                currentWears = adjustedCurrent,
+                isAlwaysWash = state.isAlwaysWash,
+                cleaningType = state.cleaningType,
+                brand = brand
+            )
+            editingItem = updated
+            updated
+        } else {
+            ClothingItem(
+                id = UUID.randomUUID().toString(),
+                name = state.name.trim(),
+                category = categoryOption.category,
+                type = state.type,
+                sleeveLength = state.sleeveLength,
+                thickness = state.thickness,
+                comfortMinCelsius = comfortMin,
+                comfortMaxCelsius = comfortMax,
+                colorHex = colorOption.colorHex,
+                colorGroup = colorOption.group,
+                pattern = state.pattern,
+                maxWears = maxWear,
+                currentWears = 0,
+                isAlwaysWash = state.isAlwaysWash,
+                cleaningType = state.cleaningType,
+                status = LaundryStatus.CLOSET,
+                brand = brand,
+                imageUrl = null,
+                lastWornDate = null
+            )
+        }
+    }
 
-        return ClothingItem(
-            id = UUID.randomUUID().toString(),
-            name = state.name.trim(),
-            category = categoryOption.category,
-            type = state.type,
-            sleeveLength = state.sleeveLength,
-            thickness = state.thickness,
-            colorHex = colorOption.colorHex,
-            colorGroup = colorOption.group,
-            pattern = state.pattern,
-            maxWears = maxWear,
-            currentWears = 0,
-            isAlwaysWash = state.isAlwaysWash,
-            cleaningType = state.cleaningType,
-            status = LaundryStatus.CLOSET,
-            brand = brand,
-            imageUrl = null,
-            lastWornDate = null
+    private fun normalizeComfortValue(value: Float): Double {
+        return (value * 10f).roundToInt() / 10.0
+    }
+
+    private suspend fun loadExistingItem(itemId: String) {
+        val item = closetRepository.getItem(itemId) ?: return
+        editingItem = item
+
+        val recommendedRange = ComfortRangeDefaults.forItem(item)
+        val categoryOption = findOrCreateCategoryOption(item)
+        val categoryChoices = ensureCategoryAvailable(categoryOption)
+        val (colorOption, colorChoices) = resolveColorOption(item)
+        val comfortMin = item.comfortMinCelsius ?: recommendedRange.first
+        val comfortMax = item.comfortMaxCelsius ?: recommendedRange.second
+
+        _uiState.update { state ->
+            state.copy(
+                name = item.name,
+                brand = item.brand.orEmpty(),
+                selectedCategory = categoryOption,
+                selectedColor = colorOption,
+                availableCategories = categoryChoices,
+                availableColors = colorChoices,
+                isAlwaysWash = item.isAlwaysWash,
+                maxWears = if (item.isAlwaysWash) 1 else item.maxWears,
+                cleaningType = item.cleaningType,
+                type = item.type,
+                sleeveLength = item.sleeveLength,
+                thickness = item.thickness,
+                pattern = item.pattern,
+                status = item.status,
+                comfortMinCelsius = comfortMin,
+                comfortMaxCelsius = comfortMax,
+                isComfortRangeCustomized = isCustomComfortRange(item, recommendedRange),
+                isEditMode = true
+            )
+        }
+    }
+
+    private fun findOrCreateCategoryOption(item: ClothingItem): CategoryOption {
+        val existing = categoryOptions.firstOrNull { it.category == item.category }
+        if (existing != null) return existing
+        val fallbackMaxWears = item.maxWears.coerceAtLeast(MIN_WEAR_COUNT)
+        return CategoryOption(
+            category = item.category,
+            labelResId = item.category.labelResId(),
+            type = item.type,
+            defaultSleeve = item.sleeveLength,
+            defaultThickness = item.thickness,
+            defaultCleaning = item.cleaningType,
+            defaultMaxWears = fallbackMaxWears,
+            defaultAlwaysWash = item.isAlwaysWash
         )
+    }
+
+    private fun ensureCategoryAvailable(option: CategoryOption): List<CategoryOption> {
+        return if (categoryOptions.any { it.category == option.category }) {
+            categoryOptions
+        } else {
+            categoryOptions + option
+        }
+    }
+
+    private fun resolveColorOption(item: ClothingItem): Pair<ColorOption, List<ColorOption>> {
+        val match = colorOptions.firstOrNull { it.colorHex.equals(item.colorHex, ignoreCase = true) }
+        if (match != null) return match to colorOptions
+        val option = ColorOption(
+            colorHex = item.colorHex,
+            labelResId = R.string.closet_color_custom,
+            group = item.colorGroup
+        )
+        return option to (colorOptions + option)
+    }
+
+    private fun isCustomComfortRange(item: ClothingItem, recommendedRange: Pair<Double, Double>): Boolean {
+        val minValue = item.comfortMinCelsius
+        val maxValue = item.comfortMaxCelsius
+        if (minValue == null && maxValue == null) return false
+        val minDiffers = minValue != null && !approxEquals(minValue, recommendedRange.first)
+        val maxDiffers = maxValue != null && !approxEquals(maxValue, recommendedRange.second)
+        val missingValue = minValue == null || maxValue == null
+        return minDiffers || maxDiffers || missingValue
+    }
+
+    private fun approxEquals(a: Double, b: Double, tolerance: Double = 0.1): Boolean {
+        return abs(a - b) <= tolerance
     }
 
     class Factory(
         private val closetRepository: ClosetRepository,
-        private val userPreferencesRepository: UserPreferencesRepository
+        private val userPreferencesRepository: UserPreferencesRepository,
+        private val existingItemId: String?
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             if (modelClass.isAssignableFrom(ClosetEditorViewModel::class.java)) {
                 return ClosetEditorViewModel(
                     closetRepository = closetRepository,
-                    userPreferencesRepository = userPreferencesRepository
+                    userPreferencesRepository = userPreferencesRepository,
+                    existingItemId = existingItemId
                 ) as T
             }
             throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
@@ -296,6 +482,16 @@ internal fun closetCategoryOptions(): List<CategoryOption> = listOf(
         defaultThickness = Thickness.NORMAL,
         defaultCleaning = CleaningType.DRY,
         defaultMaxWears = 8,
+        defaultAlwaysWash = false
+    ),
+    CategoryOption(
+        category = ClothingCategory.DOWN,
+        labelResId = R.string.clothing_category_down,
+        type = ClothingType.OUTER,
+        defaultSleeve = SleeveLength.LONG,
+        defaultThickness = Thickness.THICK,
+        defaultCleaning = CleaningType.DRY,
+        defaultMaxWears = 6,
         defaultAlwaysWash = false
     ),
     CategoryOption(

@@ -75,7 +75,7 @@ class DashboardViewModel(
     private val _uiState = MutableStateFlow(DashboardUiState())
     val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
 
-    private val selectionState = MutableStateFlow<Pair<String, String>?>(null)
+    private val selectionState = MutableStateFlow<SuggestionSelectionKey?>(null)
     private val weatherStatus = MutableStateFlow(WeatherRefreshStatus())
     private var suggestionCache: List<OutfitSuggestion> = emptyList()
     private val reviewDialogState = MutableStateFlow(false)
@@ -109,8 +109,8 @@ class DashboardViewModel(
                     weatherRepository.observeCurrentWeather(),
                     weatherStatus,
                     selectionState
-                ) { preferences, items, weather, weatherStatus, selectedPair ->
-                    CombinedInputs(preferences, items, weather, weatherStatus, selectedPair)
+                ) { preferences, items, weather, weatherStatus, selectedKey ->
+                    CombinedInputs(preferences, items, weather, weatherStatus, selectedKey)
                 },
                 weatherDebugState,
                 clockDebugState,
@@ -131,7 +131,7 @@ class DashboardViewModel(
                 val items = inputs.items
                 val weather = inputs.weather
                 val weatherStatus = inputs.weatherStatus
-                val selectedPair = inputs.selectedPair
+                val selectedKey = inputs.selectedKey
 
                 val mode = preferences.lastSelectedMode.takeUnless { it == TpoMode.UNKNOWN } ?: TpoMode.CASUAL
                 val environment = preferences.lastSelectedEnvironment.takeUnless { it == EnvironmentMode.UNKNOWN }
@@ -151,16 +151,16 @@ class DashboardViewModel(
                 suggestionCache = suggestions
                 val totalSuggestionCount = suggestions.size
                 val alert = buildInventoryAlert(mode, totalSuggestionCount)
-                val resolvedSelectionPair = when {
-                    selectedPair != null && suggestions.any { it.pairIds == selectedPair } -> selectedPair
-                    suggestions.isNotEmpty() -> suggestions.first().pairIds
+                val resolvedSelectionKey = when {
+                    selectedKey != null && suggestions.any { it.selectionKey == selectedKey } -> selectedKey
+                    suggestions.isNotEmpty() -> suggestions.first().selectionKey
                     else -> null
                 }
-                if (resolvedSelectionPair != selectedPair) {
-                    selectionState.value = resolvedSelectionPair
+                if (resolvedSelectionKey != selectedKey) {
+                    selectionState.value = resolvedSelectionKey
                 }
 
-                val selectedSuggestion = suggestions.firstOrNull { it.pairIds == resolvedSelectionPair }
+                val selectedSuggestion = suggestions.firstOrNull { it.selectionKey == resolvedSelectionKey }
                     ?: suggestions.firstOrNull()
                 val previewSuggestions = selectedSuggestion?.let { listOf(it) } ?: emptyList()
                 val insights = selectedSuggestion?.let { suggestion ->
@@ -407,6 +407,7 @@ class DashboardViewModel(
 
         val topsInCloset = items.filter { it.type == ClothingType.TOP }
         val bottomsInCloset = items.filter { it.type == ClothingType.BOTTOM }
+        val outersInCloset = items.filter { it.type == ClothingType.OUTER }
 
         if (topsInCloset.isEmpty()) {
             recommendations += buildRecommendationMessage(R.string.dashboard_recommendation_missing_top_inventory, mode, ClothingType.TOP)
@@ -439,6 +440,11 @@ class DashboardViewModel(
 
         val candidateTops = if (tops.isNotEmpty()) tops else topsInCloset
         val candidateBottoms = if (bottoms.isNotEmpty()) bottoms else bottomsInCloset
+        val outerCandidates = resolveOuterCandidates(
+            outers = outersInCloset,
+            temperatureMin = temperatureMin,
+            temperatureMax = temperatureMax
+        )
 
         if (candidateTops.isEmpty() || candidateBottoms.isEmpty()) {
             if (recommendations.isEmpty()) {
@@ -466,9 +472,11 @@ class DashboardViewModel(
                     filteredByColor = true
                     continue
                 }
+                val outer = pickOuterCandidate(outerCandidates, suggestions.size)
                 suggestions += OutfitSuggestion(
                     top = top,
                     bottom = bottom,
+                    outer = outer,
                     totalScore = totalScore
                 )
             }
@@ -479,6 +487,7 @@ class DashboardViewModel(
                 compareByDescending<OutfitSuggestion> { it.totalScore }
                     .thenBy { it.top.name }
                     .thenBy { it.bottom.name }
+                    .thenBy { it.outer?.name ?: "" }
             )
             .take(20)
 
@@ -492,9 +501,11 @@ class DashboardViewModel(
             for (bottom in candidateBottoms) {
                 val bottomScore = formalScoreCalculator.calculate(bottom)
                 if (!isColorCompatible(top, bottom, disallowVividPair, allowBlackNavy)) continue
+                val outer = pickOuterCandidate(outerCandidates, relaxedSuggestions.size)
                 relaxedSuggestions += OutfitSuggestion(
                     top = top,
                     bottom = bottom,
+                    outer = outer,
                     totalScore = topScore + bottomScore
                 )
             }
@@ -510,6 +521,7 @@ class DashboardViewModel(
                         compareByDescending<OutfitSuggestion> { it.totalScore }
                             .thenBy { it.top.name }
                             .thenBy { it.bottom.name }
+                            .thenBy { it.outer?.name ?: "" }
                     )
                     .take(20),
                 recommendations = recommendations.distinct()
@@ -579,6 +591,35 @@ class DashboardViewModel(
         )
 
         return insights
+    }
+
+    private fun resolveOuterCandidates(
+        outers: List<ClothingItem>,
+        temperatureMin: Double,
+        temperatureMax: Double
+    ): List<ClothingItem> {
+        if (outers.isEmpty()) return emptyList()
+        val suitable = outers.filter { outer ->
+            weatherSuitabilityEvaluator.isSuitable(
+                item = outer,
+                minTemperature = temperatureMin,
+                maxTemperature = temperatureMax
+            )
+        }
+        val pool = if (suitable.isNotEmpty()) suitable else outers
+        return pool.sortedWith(
+            compareByDescending<ClothingItem> { formalScoreCalculator.calculate(it) }
+                .thenBy { it.name }
+        )
+    }
+
+    private fun pickOuterCandidate(
+        candidates: List<ClothingItem>,
+        position: Int
+    ): ClothingItem? {
+        if (candidates.isEmpty()) return null
+        val index = position % candidates.size
+        return candidates[index]
     }
 
     private fun buildInventoryReviewMessages(
@@ -722,7 +763,7 @@ class DashboardViewModel(
     }
 
     fun onSuggestionSelected(outfit: OutfitSuggestion) {
-        selectionState.value = outfit.pairIds
+        selectionState.value = outfit.selectionKey
     }
 
     fun onReviewInventoryRequested() {
@@ -737,19 +778,19 @@ class DashboardViewModel(
     fun rerollSuggestion() {
         val suggestions = suggestionCache
         if (suggestions.isEmpty()) return
-        val currentPair = selectionState.value
+        val currentKey = selectionState.value
         val nextSuggestion = suggestions
-            .filter { it.pairIds != currentPair }
+            .filter { it.selectionKey != currentKey }
             .randomOrNull()
             ?: suggestions.first()
-        selectionState.value = nextSuggestion.pairIds
+        selectionState.value = nextSuggestion.selectionKey
     }
 
     fun onWearSelected() {
         val suggestion = _uiState.value.selectedSuggestion ?: return
         viewModelScope.launch {
             val weather = _uiState.value.weather ?: weatherRepository.observeCurrentWeather().first()
-            val uniqueItems = listOf(suggestion.top, suggestion.bottom).distinctBy { it.id }
+            val uniqueItems = listOfNotNull(suggestion.top, suggestion.bottom, suggestion.outer).distinctBy { it.id }
             val outcomes = uniqueItems.map { applyWearUseCase.execute(it, weather) }
             outcomes.forEach { outcome -> closetRepository.upsert(outcome.updatedItem) }
             val messages = outcomes.map { outcome -> outcome.toUiMessage(stringResolver) }
@@ -805,12 +846,18 @@ private data class SuggestionResult(
     val recommendations: List<UiMessage>
 )
 
+private data class SuggestionSelectionKey(
+    val topId: String,
+    val bottomId: String,
+    val outerId: String?
+)
+
 private data class CombinedInputs(
     val preferences: UserPreferences,
     val items: List<ClothingItem>,
     val weather: WeatherSnapshot,
     val weatherStatus: WeatherRefreshStatus,
-    val selectedPair: Pair<String, String>?
+    val selectedKey: SuggestionSelectionKey?
 )
 
 private data class CombinedInputsWithDebug(
@@ -820,8 +867,12 @@ private data class CombinedInputsWithDebug(
     val wearFeedback: WearFeedbackDebugUiState?
 )
 
-private val OutfitSuggestion.pairIds: Pair<String, String>
-    get() = top.id to bottom.id
+private val OutfitSuggestion.selectionKey: SuggestionSelectionKey
+    get() = SuggestionSelectionKey(
+        topId = top.id,
+        bottomId = bottom.id,
+        outerId = outer?.id
+    )
 
 private data class WeatherRefreshStatus(
     val isRefreshing: Boolean = false,
