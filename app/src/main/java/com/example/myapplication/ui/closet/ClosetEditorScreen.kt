@@ -1,5 +1,7 @@
 package com.example.myapplication.ui.closet
 
+import androidx.annotation.StringRes
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,9 +15,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -27,6 +31,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RangeSlider
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -39,11 +44,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.myapplication.R
 import com.example.myapplication.domain.model.CleaningType
 import com.example.myapplication.domain.model.ClothingCategory
+import com.example.myapplication.domain.model.LaundryStatus
 import com.example.myapplication.domain.model.SleeveLength
 import com.example.myapplication.domain.model.Thickness
 import com.example.myapplication.domain.usecase.ComfortRangeDefaults
@@ -98,6 +105,7 @@ fun ClosetEditorScreen(
         onCleaningTypeChanged = viewModel::onCleaningTypeChanged,
         onSleeveLengthSelected = viewModel::onSleeveLengthSelected,
         onThicknessSelected = viewModel::onThicknessSelected,
+        onStatusSelected = viewModel::onStatusSelected,
         onSave = viewModel::onSave,
         modifier = modifier
     )
@@ -119,6 +127,7 @@ private fun ClosetEditorContent(
     onCleaningTypeChanged: (CleaningType) -> Unit,
     onSleeveLengthSelected: (SleeveLength) -> Unit,
     onThicknessSelected: (Thickness) -> Unit,
+    onStatusSelected: (LaundryStatus) -> Unit,
     onSave: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -186,6 +195,21 @@ private fun ClosetEditorContent(
                     Text(text = stringResource(id = R.string.closet_editor_field_brand_support))
                 }
             )
+
+            if (!state.isEditMode) {
+                SectionHeader(text = stringResource(id = R.string.closet_editor_section_initial_status))
+                StatusOptionRow(
+                    options = statusOptions(),
+                    selected = state.status,
+                    onSelect = onStatusSelected,
+                    enabled = !state.isSaving
+                )
+                Text(
+                    text = stringResource(id = R.string.closet_editor_status_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
 
             SectionHeader(text = stringResource(id = R.string.closet_editor_section_category))
             FlowRow(
@@ -415,6 +439,131 @@ private fun cleaningOptions(): List<Pair<CleaningType, Int>> = listOf(
     CleaningType.DRY
 ).map { it to it.labelResId() }
 
+@Composable
+private fun StatusOptionRow(
+    options: List<StatusOption>,
+    selected: LaundryStatus,
+    onSelect: (LaundryStatus) -> Unit,
+    enabled: Boolean
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        options.forEach { option ->
+            StatusOptionCard(
+                option = option,
+                selected = selected == option.status,
+                onClick = { onSelect(option.status) },
+                enabled = enabled,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun StatusOptionCard(
+    option: StatusOption,
+    selected: Boolean,
+    onClick: () -> Unit,
+    enabled: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val backgroundColor = if (selected) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        MaterialTheme.colorScheme.surface
+    }
+    val contentColor = if (selected) {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+    val border = if (selected) {
+        BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+    } else {
+        BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    }
+
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(20.dp),
+        color = backgroundColor,
+        contentColor = contentColor,
+        border = border,
+        tonalElevation = if (selected) 6.dp else 0.dp,
+        onClick = onClick,
+        enabled = enabled
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = option.emoji,
+                    fontSize = 24.sp
+                )
+                if (selected) {
+                    Icon(
+                        imageVector = Icons.Outlined.Check,
+                        contentDescription = null
+                    )
+                }
+            }
+            Text(
+                text = stringResource(id = option.titleResId),
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                text = stringResource(id = option.descriptionResId),
+                style = MaterialTheme.typography.bodySmall,
+                color = if (selected) {
+                    MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.9f)
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                }
+            )
+        }
+    }
+}
+
+private data class StatusOption(
+    val status: LaundryStatus,
+    val emoji: String,
+    @StringRes val titleResId: Int,
+    @StringRes val descriptionResId: Int
+)
+
+private fun statusOptions(): List<StatusOption> = listOf(
+    StatusOption(
+        status = LaundryStatus.CLOSET,
+        emoji = "📂",
+        titleResId = R.string.closet_editor_status_option_closet_title,
+        descriptionResId = R.string.closet_editor_status_option_closet_description
+    ),
+    StatusOption(
+        status = LaundryStatus.DIRTY,
+        emoji = "🧺",
+        titleResId = R.string.closet_editor_status_option_dirty_title,
+        descriptionResId = R.string.closet_editor_status_option_dirty_description
+    ),
+    StatusOption(
+        status = LaundryStatus.CLEANING,
+        emoji = "🏬",
+        titleResId = R.string.closet_editor_status_option_cleaning_title,
+        descriptionResId = R.string.closet_editor_status_option_cleaning_description
+    )
+)
+
 private fun formatComfortTemperature(value: Double): String =
     String.format(Locale.JAPAN, "%.1f", value)
 
@@ -451,6 +600,7 @@ private fun ClosetEditorPreview() {
             onCleaningTypeChanged = {},
             onSleeveLengthSelected = {},
             onThicknessSelected = {},
+            onStatusSelected = {},
             onSave = {}
         )
     }

@@ -13,6 +13,9 @@ import com.example.myapplication.data.weather.NoOpWeatherDebugController
 import com.example.myapplication.data.weather.WeatherRepository
 import com.example.myapplication.data.weather.WeatherDebugController
 import com.example.myapplication.data.weather.WeatherDebugOverride
+import com.example.myapplication.domain.model.CasualForecastDay
+import com.example.myapplication.domain.model.CasualForecastSegment
+import com.example.myapplication.domain.model.CasualForecastSegmentSummary
 import com.example.myapplication.domain.model.ClothingCategory
 import com.example.myapplication.domain.model.ClothingItem
 import com.example.myapplication.domain.model.ClothingType
@@ -29,20 +32,24 @@ import com.example.myapplication.domain.usecase.FormalScoreCalculator
 import com.example.myapplication.domain.usecase.WeatherSuitabilityEvaluator
 import com.example.myapplication.util.time.DebugClockController
 import com.example.myapplication.util.time.InstantCompat
-import com.example.myapplication.util.time.ManualTimeOverride
 import com.example.myapplication.util.time.NoOpDebugClockController
 import java.text.SimpleDateFormat
+import java.time.Duration
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import java.util.Date
 import java.util.Locale
 import com.example.myapplication.ui.dashboard.model.AlertSeverity
 import com.example.myapplication.ui.dashboard.model.ClockDebugUiState
 import com.example.myapplication.ui.dashboard.model.DashboardUiState
 import com.example.myapplication.ui.dashboard.model.InventoryAlert
 import com.example.myapplication.ui.dashboard.model.OutfitSuggestion
+import com.example.myapplication.ui.dashboard.model.CasualForecastSegmentOption
+import com.example.myapplication.ui.dashboard.model.CasualForecastSummary
+import com.example.myapplication.ui.dashboard.model.CasualForecastUiState
 import com.example.myapplication.ui.dashboard.model.WeatherDebugUiState
 import com.example.myapplication.ui.dashboard.model.WearFeedbackDebugUiState
 import com.example.myapplication.ui.common.UiMessage
@@ -78,6 +85,7 @@ class DashboardViewModel(
     private val selectionState = MutableStateFlow<SuggestionSelectionKey?>(null)
     private val weatherStatus = MutableStateFlow(WeatherRefreshStatus())
     private var suggestionCache: List<OutfitSuggestion> = emptyList()
+    private val casualForecastSelection = MutableStateFlow(CasualForecastSelection())
     private val reviewDialogState = MutableStateFlow(false)
     private val weatherDebugState = MutableStateFlow(
         if (weatherDebugController.isSupported) WeatherDebugUiState() else null
@@ -88,6 +96,7 @@ class DashboardViewModel(
     private val wearFeedbackDebugState = MutableStateFlow(
         if (clockDebugController.isSupported || weatherDebugController.isSupported) WearFeedbackDebugUiState() else null
     )
+    private val comebackDialogState = MutableStateFlow<UiMessage?>(null)
 
     private val _wearNotificationEvents = MutableSharedFlow<List<UiMessage>>(extraBufferCapacity = 1)
     val wearNotificationEvents = _wearNotificationEvents.asSharedFlow()
@@ -97,108 +106,160 @@ class DashboardViewModel(
         observeWeatherDebug()
         observeWeatherDebugDefaults()
         observeClockDebug()
+        trackLastLogin()
         refreshWeather()
     }
 
     private fun observeData() {
         viewModelScope.launch {
-            combine(
-                combine(
-                    userPreferencesRepository.observe(),
-                    closetRepository.observeAll(),
-                    weatherRepository.observeCurrentWeather(),
-                    weatherStatus,
-                    selectionState
-                ) { preferences, items, weather, weatherStatus, selectedKey ->
-                    CombinedInputs(preferences, items, weather, weatherStatus, selectedKey)
-                },
-                weatherDebugState,
-                clockDebugState,
-                wearFeedbackDebugState
-            ) { inputs, weatherDebug, clockDebug, wearFeedback ->
-                CombinedInputsWithDebug(
-                    base = inputs,
-                    weatherDebug = weatherDebug,
-                    clockDebug = clockDebug,
-                    wearFeedback = wearFeedback
-                )
-            }.combine(reviewDialogState) { combined, reviewVisible ->
-                val inputs = combined.base
-                val weatherDebug = combined.weatherDebug
-                val clockDebug = combined.clockDebug
-                val wearFeedback = combined.wearFeedback
-                val preferences = inputs.preferences
-                val items = inputs.items
-                val weather = inputs.weather
-                val weatherStatus = inputs.weatherStatus
-                val selectedKey = inputs.selectedKey
-
-                val mode = preferences.lastSelectedMode.takeUnless { it == TpoMode.UNKNOWN } ?: TpoMode.CASUAL
-                val environment = preferences.lastSelectedEnvironment.takeUnless { it == EnvironmentMode.UNKNOWN }
-                    ?: EnvironmentMode.OUTDOOR
-                val closetItems = items.filter { it.status == LaundryStatus.CLOSET }
-                val (targetMinTemp, targetMaxTemp) = resolveComfortRange(environment, weather)
-                val suggestionResult = buildSuggestions(
-                    mode = mode,
-                    environment = environment,
-                    items = closetItems,
-                    disallowVividPair = preferences.colorRules.disallowVividPair,
-                    allowBlackNavy = preferences.colorRules.allowBlackNavy,
-                    temperatureMin = targetMinTemp,
-                    temperatureMax = targetMaxTemp
-                )
-                val suggestions = suggestionResult.suggestions
-                suggestionCache = suggestions
-                val totalSuggestionCount = suggestions.size
-                val alert = buildInventoryAlert(mode, totalSuggestionCount)
-                val resolvedSelectionKey = when {
-                    selectedKey != null && suggestions.any { it.selectionKey == selectedKey } -> selectedKey
-                    suggestions.isNotEmpty() -> suggestions.first().selectionKey
-                    else -> null
+            val baseFlow = userPreferencesRepository.observe()
+                .combine(closetRepository.observeAll()) { preferences, items ->
+                    BaseInputsBuilder(preferences = preferences, items = items)
                 }
-                if (resolvedSelectionKey != selectedKey) {
-                    selectionState.value = resolvedSelectionKey
+                .combine(weatherRepository.observeCurrentWeather()) { builder, weather ->
+                    builder.copy(weather = weather)
+                }
+                .combine(weatherStatus) { builder, status ->
+                    builder.copy(weatherStatus = status)
+                }
+                .combine(selectionState) { builder, selectedKey ->
+                    builder.copy(selectedKey = selectedKey)
+                }
+                .combine(casualForecastSelection) { builder, casualSelection ->
+                    val weatherSnapshot = builder.weather
+                        ?: throw IllegalStateException("Weather snapshot missing")
+                    CombinedInputs(
+                        preferences = builder.preferences,
+                        items = builder.items,
+                        weather = weatherSnapshot,
+                        weatherStatus = builder.weatherStatus,
+                        selectedKey = builder.selectedKey,
+                        casualSelection = casualSelection
+                    )
                 }
 
-                val selectedSuggestion = suggestions.firstOrNull { it.selectionKey == resolvedSelectionKey }
-                    ?: suggestions.firstOrNull()
-                val previewSuggestions = selectedSuggestion?.let { listOf(it) } ?: emptyList()
-                val insights = selectedSuggestion?.let { suggestion ->
-                    buildSelectionInsights(
-                        suggestion = suggestion,
+            val debugFlow = weatherDebugState
+                .combine(clockDebugState) { weatherDebug, clockDebug ->
+                    DebugInputs(weatherDebug = weatherDebug, clockDebug = clockDebug)
+                }
+                .combine(wearFeedbackDebugState) { debugInputs, wearFeedback ->
+                    debugInputs.copy(wearFeedback = wearFeedback)
+                }
+
+            baseFlow
+                .combine(debugFlow) { base, debug ->
+                    CombinedInputsWithDebug(
+                        base = base,
+                        weatherDebug = debug.weatherDebug,
+                        clockDebug = debug.clockDebug,
+                        wearFeedback = debug.wearFeedback
+                    )
+                }
+                .combine(reviewDialogState) { combined, reviewVisible ->
+                    combined to reviewVisible
+                }
+                .combine(comebackDialogState) { (combined, reviewVisible), comebackMessage ->
+                    val inputs = combined.base
+                    val weatherDebug = combined.weatherDebug
+                    val clockDebug = combined.clockDebug
+                    val wearFeedback = combined.wearFeedback
+                    val preferences = inputs.preferences
+                    val items = inputs.items
+                    val weather = inputs.weather
+                    val weatherStatus = inputs.weatherStatus
+                    val selectedKey = inputs.selectedKey
+
+                    val mode = preferences.lastSelectedMode.takeUnless { it == TpoMode.UNKNOWN } ?: TpoMode.CASUAL
+                    val environment = preferences.lastSelectedEnvironment.takeUnless { it == EnvironmentMode.UNKNOWN }
+                        ?: EnvironmentMode.OUTDOOR
+                    val closetItems = items.filter { it.status == LaundryStatus.CLOSET }
+                    val casualComputation = if (mode == TpoMode.CASUAL) {
+                        buildCasualForecastState(weather, inputs.casualSelection)
+                    } else {
+                        CasualForecastComputation()
+                    }
+                    val resolvedCasualSelection = casualComputation.resolvedSelection
+                    if (resolvedCasualSelection != null && resolvedCasualSelection != inputs.casualSelection) {
+                        casualForecastSelection.value = resolvedCasualSelection
+                    }
+                    val selectedCasualSummary = casualComputation.uiState?.summary
+                    val (targetMinTemp, targetMaxTemp) = if (selectedCasualSummary != null) {
+                        resolveComfortRange(
+                            environment = environment,
+                            weather = weather,
+                            minOverride = selectedCasualSummary.minTemperatureCelsius,
+                            maxOverride = selectedCasualSummary.maxTemperatureCelsius
+                        )
+                    } else {
+                        resolveComfortRange(environment, weather)
+                    }
+                    val suggestionResult = buildSuggestions(
                         mode = mode,
                         environment = environment,
-                        comfortMin = targetMinTemp,
-                        comfortMax = targetMaxTemp,
-                        weather = weather,
+                        items = closetItems,
                         disallowVividPair = preferences.colorRules.disallowVividPair,
-                        allowBlackNavy = preferences.colorRules.allowBlackNavy
+                        allowBlackNavy = preferences.colorRules.allowBlackNavy,
+                        temperatureMin = targetMinTemp,
+                        temperatureMax = targetMaxTemp
                     )
-                } ?: emptyList()
+                    val suggestions = suggestionResult.suggestions
+                    suggestionCache = suggestions
+                    val totalSuggestionCount = suggestions.size
+                    val alert = buildInventoryAlert(mode, totalSuggestionCount)
+                    val resolvedSelectionKey = when {
+                        selectedKey != null && suggestions.any { it.selectionKey == selectedKey } -> selectedKey
+                        suggestions.isNotEmpty() -> suggestions.first().selectionKey
+                        else -> null
+                    }
+                    if (resolvedSelectionKey != selectedKey) {
+                        selectionState.value = resolvedSelectionKey
+                    }
 
-                val reviewMessages = buildInventoryReviewMessages(alert, suggestionResult.recommendations)
+                    val selectedSuggestion = suggestions.firstOrNull { it.selectionKey == resolvedSelectionKey }
+                        ?: suggestions.firstOrNull()
+                    val previewSuggestions = selectedSuggestion?.let { listOf(it) } ?: emptyList()
+                    val insights = selectedSuggestion?.let { suggestion ->
+                        buildSelectionInsights(
+                            suggestion = suggestion,
+                            mode = mode,
+                            environment = environment,
+                            comfortMin = targetMinTemp,
+                            comfortMax = targetMaxTemp,
+                            weather = weather,
+                            disallowVividPair = preferences.colorRules.disallowVividPair,
+                            allowBlackNavy = preferences.colorRules.allowBlackNavy
+                        )
+                    } ?: emptyList()
 
-                DashboardUiState(
-                    isLoading = false,
-                    mode = mode,
-                    environment = environment,
-                    suggestions = previewSuggestions,
-                    alert = alert,
-                    weather = weather,
-                    selectedSuggestion = selectedSuggestion,
-                    isRefreshingWeather = weatherStatus.isRefreshing,
-                    lastWeatherUpdatedAt = weather.updatedAt ?: weatherStatus.lastUpdated,
-                    weatherErrorMessage = weatherStatus.errorMessage,
-                    purchaseRecommendations = suggestionResult.recommendations,
-                    totalSuggestionCount = totalSuggestionCount,
-                    selectionInsights = insights,
-                    inventoryReviewMessages = reviewMessages,
-                    isInventoryReviewVisible = reviewVisible && reviewMessages.isNotEmpty(),
-                    weatherDebug = weatherDebug,
-                    clockDebug = clockDebug,
-                    wearFeedbackDebug = wearFeedback
-                )
-            }.collect { state ->
+                    buildInventoryReviewMessages(
+                        alert,
+                        suggestionResult.recommendations
+                    ).let { reviewMessages ->
+                        DashboardUiState(
+                            isLoading = false,
+                            mode = mode,
+                            environment = environment,
+                            suggestions = previewSuggestions,
+                            alert = alert,
+                            weather = weather,
+                            selectedSuggestion = selectedSuggestion,
+                            isRefreshingWeather = weatherStatus.isRefreshing,
+                            lastWeatherUpdatedAt = weather.updatedAt ?: weatherStatus.lastUpdated,
+                            weatherErrorMessage = weatherStatus.errorMessage,
+                            purchaseRecommendations = suggestionResult.recommendations,
+                            totalSuggestionCount = totalSuggestionCount,
+                            selectionInsights = insights,
+                            inventoryReviewMessages = reviewMessages,
+                            isInventoryReviewVisible = reviewVisible && reviewMessages.isNotEmpty(),
+                            weatherDebug = weatherDebug,
+                            clockDebug = clockDebug,
+                            wearFeedbackDebug = wearFeedback,
+                            casualForecast = casualComputation.uiState,
+                            comebackDialogMessage = comebackMessage
+                        )
+                    }
+                }
+                .collect { state ->
                 _uiState.value = state
             }
         }
@@ -284,6 +345,59 @@ class DashboardViewModel(
                 }
             }
         }
+        viewModelScope.launch {
+            clockDebugController.manualOverride.collect { override ->
+                clockDebugState.update { current ->
+                    current?.let { state ->
+                        if (override != null) {
+                            val label = formatManualOverrideLabel(override.targetEpochMillis)
+                            val normalizedInput = formatManualOverrideInput(override.targetEpochMillis)
+                            val lastApplied = when {
+                                state.isManualOverrideActive && state.manualOverrideLabel == label -> state.lastAppliedAt
+                                state.lastAppliedAt != null -> state.lastAppliedAt
+                                else -> InstantCompat.nowOrNull()
+                            }
+                            state.copy(
+                                isManualOverrideActive = true,
+                                manualOverrideLabel = label,
+                                manualOverrideInput = normalizedInput,
+                                errorMessage = null,
+                                lastAppliedAt = lastApplied
+                            )
+                        } else {
+                            state.copy(
+                                isManualOverrideActive = false,
+                                manualOverrideLabel = null,
+                                manualOverrideInput = "",
+                                errorMessage = null,
+                                lastAppliedAt = null
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun trackLastLogin() {
+        viewModelScope.launch {
+            val now = InstantCompat.nowOrNull() ?: return@launch
+            val preferences = userPreferencesRepository.observe().first()
+            val lastLogin = preferences.lastLogin
+            if (lastLogin != null) {
+                val daysSince = Duration.between(lastLogin, now).toDays()
+                if (daysSince >= INACTIVITY_THRESHOLD_DAYS && comebackDialogState.value == null) {
+                    val clampedDays = daysSince.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+                    comebackDialogState.value = UiMessage(
+                        resId = R.string.dashboard_comeback_dialog_message,
+                        args = listOf(UiMessageArg.Raw(clampedDays))
+                    )
+                }
+            }
+            userPreferencesRepository.update { current ->
+                current.copy(lastLogin = now)
+            }
+        }
     }
 
     fun refreshWeather() {
@@ -311,6 +425,52 @@ class DashboardViewModel(
     fun onClockDebugNextDayChanged(enabled: Boolean) {
         if (!clockDebugController.isSupported) return
         clockDebugController.setNextDayEnabled(enabled)
+        clockDebugState.update { current ->
+            current?.copy(errorMessage = null)
+        }
+    }
+
+    fun onClockDebugManualOverrideInputChanged(value: String) {
+        clockDebugState.update { current ->
+            current?.copy(manualOverrideInput = value, errorMessage = null)
+        }
+    }
+
+    fun applyClockDebugManualOverride() {
+        if (!clockDebugController.isSupported) return
+        val currentState = clockDebugState.value ?: return
+        val parseResult = parseManualOverrideInput(currentState.manualOverrideInput)
+        if (parseResult == null) {
+            setClockDebugError(R.string.debug_clock_manual_error_format)
+            return
+        }
+        clockDebugController.setManualOverride(parseResult.epochMillis)
+        val appliedAt = InstantCompat.nowOrNull()
+        val label = formatManualOverrideLabel(parseResult.epochMillis)
+        clockDebugState.update { state ->
+            state?.copy(
+                isManualOverrideActive = true,
+                manualOverrideLabel = label,
+                manualOverrideInput = parseResult.normalizedInput,
+                isNextDayEnabled = false,
+                lastAppliedAt = appliedAt,
+                errorMessage = null
+            )
+        }
+    }
+
+    fun clearClockDebugManualOverride() {
+        if (!clockDebugController.isSupported) return
+        clockDebugController.clearManualOverride()
+        clockDebugState.update { state ->
+            state?.copy(
+                isManualOverrideActive = false,
+                manualOverrideLabel = null,
+                manualOverrideInput = "",
+                lastAppliedAt = null,
+                errorMessage = null
+            )
+        }
     }
 
     fun onDebugMinTemperatureChanged(value: String) {
@@ -328,6 +488,18 @@ class DashboardViewModel(
     fun onDebugHumidityChanged(value: String) {
         weatherDebugState.update { current ->
             current?.copy(humidityInput = value, errorMessage = null)
+        }
+    }
+
+    fun onCasualForecastDaySelected(day: CasualForecastDay) {
+        casualForecastSelection.update { current ->
+            if (current.day == day) current else current.copy(day = day)
+        }
+    }
+
+    fun onCasualForecastSegmentSelected(segment: CasualForecastSegment) {
+        casualForecastSelection.update { current ->
+            if (current.segment == segment) current else current.copy(segment = segment)
         }
     }
 
@@ -385,6 +557,45 @@ class DashboardViewModel(
         val message = stringResolver(resId)
         weatherDebugState.update { state ->
             state?.copy(errorMessage = message)
+        }
+    }
+
+    private fun setClockDebugError(@StringRes resId: Int) {
+        val message = stringResolver(resId)
+        clockDebugState.update { state ->
+            state?.copy(errorMessage = message)
+        }
+    }
+
+    private fun parseManualOverrideInput(raw: String): ManualOverrideParseResult? {
+        val sanitized = raw.trim().replace("T", " ")
+        if (sanitized.isEmpty()) return null
+        val locale = Locale.getDefault()
+        val patterns = listOf(MANUAL_OVERRIDE_INPUT_PATTERN, MANUAL_OVERRIDE_DATE_ONLY_PATTERN)
+        for (pattern in patterns) {
+            val formatter = SimpleDateFormat(pattern, locale).apply { isLenient = false }
+            val date = runCatching { formatter.parse(sanitized) }.getOrNull() ?: continue
+            val epochMillis = date.time
+            val normalizedInput = formatManualOverrideInput(epochMillis)
+            return ManualOverrideParseResult(epochMillis = epochMillis, normalizedInput = normalizedInput)
+        }
+        return null
+    }
+
+    private fun formatManualOverrideInput(epochMillis: Long): String {
+        val locale = Locale.getDefault()
+        return SimpleDateFormat(MANUAL_OVERRIDE_INPUT_PATTERN, locale).format(Date(epochMillis))
+    }
+
+    private fun formatManualOverrideLabel(epochMillis: Long): String {
+        val instant = InstantCompat.ofEpochMilliOrNull(epochMillis)
+        return if (instant != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            DateTimeFormatter.ofPattern(MANUAL_OVERRIDE_LABEL_PATTERN)
+                .withLocale(Locale.getDefault())
+                .withZone(ZoneId.systemDefault())
+                .format(instant)
+        } else {
+            SimpleDateFormat(MANUAL_OVERRIDE_LABEL_PATTERN, Locale.getDefault()).format(Date(epochMillis))
         }
     }
 
@@ -644,10 +855,14 @@ class DashboardViewModel(
 
     private fun resolveComfortRange(
         environment: EnvironmentMode,
-        weather: WeatherSnapshot
+        weather: WeatherSnapshot,
+        minOverride: Double? = null,
+        maxOverride: Double? = null
     ): Pair<Double, Double> {
-        val minTemperature = minOf(weather.minTemperatureCelsius, weather.maxTemperatureCelsius)
-        val maxTemperature = maxOf(weather.minTemperatureCelsius, weather.maxTemperatureCelsius)
+        val rawMin = minOf(weather.minTemperatureCelsius, weather.maxTemperatureCelsius)
+        val rawMax = maxOf(weather.minTemperatureCelsius, weather.maxTemperatureCelsius)
+        val minTemperature = minOverride ?: rawMin
+        val maxTemperature = maxOverride ?: rawMax
 
         if (environment != EnvironmentMode.INDOOR) {
             return minTemperature to maxTemperature
@@ -664,6 +879,63 @@ class DashboardViewModel(
         } else {
             minTemperature to maxTemperature
         }
+    }
+
+    private fun buildCasualForecastState(
+        weather: WeatherSnapshot,
+        selection: CasualForecastSelection
+    ): CasualForecastComputation {
+        val summaries = weather.casualSegmentSummaries
+        if (summaries.isEmpty()) {
+            return CasualForecastComputation()
+        }
+        val groupedByDay = summaries.groupBy { it.day }
+        val dayOptions = groupedByDay.keys.sortedBy { it.ordinal }
+        if (dayOptions.isEmpty()) {
+            return CasualForecastComputation()
+        }
+        val resolvedDay = selection.day.takeIf { dayOptions.contains(it) } ?: dayOptions.first()
+        val summariesForDay = groupedByDay[resolvedDay].orEmpty()
+        if (summariesForDay.isEmpty()) {
+            return CasualForecastComputation()
+        }
+        val availableSegmentsForDay = summariesForDay.map { it.segment }.distinct().sortedBy { it.ordinal }
+        val resolvedSegment = selection.segment.takeIf { availableSegmentsForDay.contains(it) }
+            ?: availableSegmentsForDay.firstOrNull()
+            ?: return CasualForecastComputation()
+        val summaryForSelection = summariesForDay.firstOrNull { it.segment == resolvedSegment }
+            ?: return CasualForecastComputation()
+        val availableSegmentsOverall = CasualForecastSegment.values()
+            .filter { segment -> summaries.any { it.segment == segment } }
+        if (availableSegmentsOverall.isEmpty()) {
+            return CasualForecastComputation()
+        }
+        val segmentOptions = availableSegmentsOverall.map { segment ->
+            CasualForecastSegmentOption(
+                segment = segment,
+                isEnabled = availableSegmentsForDay.contains(segment)
+            )
+        }
+        val summary = summaryForSelection.toUiSummary()
+        val uiState = CasualForecastUiState(
+            dayOptions = dayOptions,
+            segmentOptions = segmentOptions,
+            selectedDay = resolvedDay,
+            selectedSegment = resolvedSegment,
+            summary = summary
+        )
+        return CasualForecastComputation(
+            uiState = uiState,
+            resolvedSelection = CasualForecastSelection(resolvedDay, resolvedSegment)
+        )
+    }
+
+    private fun CasualForecastSegmentSummary.toUiSummary(): CasualForecastSummary {
+        return CasualForecastSummary(
+            minTemperatureCelsius = minTemperatureCelsius,
+            maxTemperatureCelsius = maxTemperatureCelsius,
+            averageApparentTemperatureCelsius = averageApparentTemperatureCelsius
+        )
     }
 
     private fun isColorCompatible(
@@ -775,6 +1047,10 @@ class DashboardViewModel(
         reviewDialogState.value = false
     }
 
+    fun onComebackDialogDismissed() {
+        comebackDialogState.value = null
+    }
+
     fun rerollSuggestion() {
         val suggestions = suggestionCache
         if (suggestions.isEmpty()) return
@@ -806,6 +1082,10 @@ class DashboardViewModel(
 
     private companion object {
         const val INDOOR_HALF_RANGE = 2.5
+        private const val INACTIVITY_THRESHOLD_DAYS = 7L
+        private const val MANUAL_OVERRIDE_INPUT_PATTERN = "yyyy-MM-dd HH:mm"
+        private const val MANUAL_OVERRIDE_DATE_ONLY_PATTERN = "yyyy-MM-dd"
+        private const val MANUAL_OVERRIDE_LABEL_PATTERN = "M/d HH:mm"
     }
 
     class Factory(
@@ -852,12 +1132,31 @@ private data class SuggestionSelectionKey(
     val outerId: String?
 )
 
+private data class CasualForecastSelection(
+    val day: CasualForecastDay = CasualForecastDay.TODAY,
+    val segment: CasualForecastSegment = CasualForecastSegment.MORNING
+)
+
 private data class CombinedInputs(
     val preferences: UserPreferences,
     val items: List<ClothingItem>,
     val weather: WeatherSnapshot,
     val weatherStatus: WeatherRefreshStatus,
-    val selectedKey: SuggestionSelectionKey?
+    val selectedKey: SuggestionSelectionKey?,
+    val casualSelection: CasualForecastSelection
+)
+
+private data class CasualForecastComputation(
+    val uiState: CasualForecastUiState? = null,
+    val resolvedSelection: CasualForecastSelection? = null
+)
+
+private data class BaseInputsBuilder(
+    val preferences: UserPreferences,
+    val items: List<ClothingItem>,
+    val weather: WeatherSnapshot? = null,
+    val weatherStatus: WeatherRefreshStatus = WeatherRefreshStatus(),
+    val selectedKey: SuggestionSelectionKey? = null
 )
 
 private data class CombinedInputsWithDebug(
@@ -865,6 +1164,17 @@ private data class CombinedInputsWithDebug(
     val weatherDebug: WeatherDebugUiState?,
     val clockDebug: ClockDebugUiState?,
     val wearFeedback: WearFeedbackDebugUiState?
+)
+
+private data class DebugInputs(
+    val weatherDebug: WeatherDebugUiState?,
+    val clockDebug: ClockDebugUiState?,
+    val wearFeedback: WearFeedbackDebugUiState? = null
+)
+
+private data class ManualOverrideParseResult(
+    val epochMillis: Long,
+    val normalizedInput: String
 )
 
 private val OutfitSuggestion.selectionKey: SuggestionSelectionKey

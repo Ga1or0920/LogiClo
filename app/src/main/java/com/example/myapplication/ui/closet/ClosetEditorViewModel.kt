@@ -110,6 +110,12 @@ class ClosetEditorViewModel(
         }
     }
 
+    fun onStatusSelected(status: LaundryStatus) {
+        _uiState.update { state ->
+            if (state.isEditMode) state else state.copy(status = status)
+        }
+    }
+
     fun onAlwaysWashChanged(isAlwaysWash: Boolean) {
         _uiState.update { state ->
             state.copy(
@@ -239,9 +245,13 @@ class ClosetEditorViewModel(
         val brand = state.brand.trim().takeIf { it.isNotEmpty() }
         val comfortMin = min(state.comfortMinCelsius, state.comfortMaxCelsius)
         val comfortMax = max(state.comfortMinCelsius, state.comfortMaxCelsius)
+        val targetStatus = state.status.takeUnless { it == LaundryStatus.UNKNOWN } ?: LaundryStatus.CLOSET
         val existing = editingItem
         return if (existing != null) {
-            val adjustedCurrent = existing.currentWears.coerceAtMost(maxWear)
+            val adjustedCurrent = when (targetStatus) {
+                LaundryStatus.DIRTY, LaundryStatus.CLEANING -> maxWear
+                else -> existing.currentWears.coerceAtMost(maxWear)
+            }
             val updated = existing.copy(
                 name = state.name.trim(),
                 category = categoryOption.category,
@@ -257,11 +267,16 @@ class ClosetEditorViewModel(
                 currentWears = adjustedCurrent,
                 isAlwaysWash = state.isAlwaysWash,
                 cleaningType = state.cleaningType,
-                brand = brand
+                brand = brand,
+                status = targetStatus
             )
             editingItem = updated
             updated
         } else {
+            val initialCurrentWears = when (targetStatus) {
+                LaundryStatus.DIRTY, LaundryStatus.CLEANING -> maxWear
+                else -> 0
+            }
             ClothingItem(
                 id = UUID.randomUUID().toString(),
                 name = state.name.trim(),
@@ -275,10 +290,10 @@ class ClosetEditorViewModel(
                 colorGroup = colorOption.group,
                 pattern = state.pattern,
                 maxWears = maxWear,
-                currentWears = 0,
+                currentWears = initialCurrentWears,
                 isAlwaysWash = state.isAlwaysWash,
                 cleaningType = state.cleaningType,
-                status = LaundryStatus.CLOSET,
+                status = targetStatus,
                 brand = brand,
                 imageUrl = null,
                 lastWornDate = null

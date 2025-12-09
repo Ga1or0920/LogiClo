@@ -39,7 +39,10 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -67,6 +70,8 @@ import com.example.myapplication.R
 import com.example.myapplication.data.InMemoryAppContainer
 import com.example.myapplication.data.sample.SampleData
 import com.example.myapplication.domain.model.ClothingItem
+import com.example.myapplication.domain.model.CasualForecastDay
+import com.example.myapplication.domain.model.CasualForecastSegment
 import com.example.myapplication.domain.model.EnvironmentMode
 import com.example.myapplication.domain.model.ColorGroup
 import com.example.myapplication.domain.model.TpoMode
@@ -81,6 +86,9 @@ import com.example.myapplication.ui.dashboard.model.DashboardUiState
 import com.example.myapplication.ui.dashboard.model.InventoryAlert
 import com.example.myapplication.ui.dashboard.model.OutfitSuggestion
 import com.example.myapplication.ui.dashboard.model.ClockDebugUiState
+import com.example.myapplication.ui.dashboard.model.CasualForecastSegmentOption
+import com.example.myapplication.ui.dashboard.model.CasualForecastSummary
+import com.example.myapplication.ui.dashboard.model.CasualForecastUiState
 import com.example.myapplication.ui.dashboard.model.WeatherDebugUiState
 import com.example.myapplication.ui.dashboard.model.WearFeedbackDebugUiState
 import com.example.myapplication.ui.providers.LocalAppContainer
@@ -131,12 +139,18 @@ fun DashboardScreen(modifier: Modifier = Modifier) {
         onReviewInventory = viewModel::onReviewInventoryRequested,
         onDismissReviewInventory = viewModel::onReviewInventoryDismissed,
         onRefreshWeather = viewModel::refreshWeather,
+        onCasualDaySelected = viewModel::onCasualForecastDaySelected,
+        onCasualSegmentSelected = viewModel::onCasualForecastSegmentSelected,
         onClockDebugNextDayChanged = viewModel::onClockDebugNextDayChanged,
         onDebugMinTempChanged = viewModel::onDebugMinTemperatureChanged,
         onDebugMaxTempChanged = viewModel::onDebugMaxTemperatureChanged,
         onDebugHumidityChanged = viewModel::onDebugHumidityChanged,
         onApplyWeatherDebug = viewModel::applyWeatherDebugOverride,
         onClearWeatherDebug = viewModel::clearWeatherDebugOverride,
+        onClockDebugManualInputChanged = viewModel::onClockDebugManualOverrideInputChanged,
+        onApplyClockDebugManualOverride = viewModel::applyClockDebugManualOverride,
+        onClearClockDebugManualOverride = viewModel::clearClockDebugManualOverride,
+        onDismissComebackDialog = viewModel::onComebackDialogDismissed,
         modifier = modifier
     )
 }
@@ -152,7 +166,13 @@ private fun DashboardContent(
     onReviewInventory: () -> Unit,
     onDismissReviewInventory: () -> Unit,
     onRefreshWeather: () -> Unit,
+    onCasualDaySelected: (CasualForecastDay) -> Unit,
+    onCasualSegmentSelected: (CasualForecastSegment) -> Unit,
     onClockDebugNextDayChanged: (Boolean) -> Unit,
+    onClockDebugManualInputChanged: (String) -> Unit,
+    onApplyClockDebugManualOverride: () -> Unit,
+    onClearClockDebugManualOverride: () -> Unit,
+    onDismissComebackDialog: () -> Unit,
     onDebugMinTempChanged: (String) -> Unit,
     onDebugMaxTempChanged: (String) -> Unit,
     onDebugHumidityChanged: (String) -> Unit,
@@ -180,6 +200,8 @@ private fun DashboardContent(
                     onRerollSuggestion = onRerollSuggestion,
                     onReviewInventory = onReviewInventory,
                     onRefreshWeather = onRefreshWeather,
+                    onCasualDaySelected = onCasualDaySelected,
+                    onCasualSegmentSelected = onCasualSegmentSelected,
                     modifier = Modifier.fillMaxSize()
                 )
 
@@ -188,6 +210,9 @@ private fun DashboardContent(
                     clockDebug = state.clockDebug,
                     wearFeedbackDebug = state.wearFeedbackDebug,
                     onClockDebugNextDayChanged = onClockDebugNextDayChanged,
+                    onClockDebugManualInputChanged = onClockDebugManualInputChanged,
+                    onApplyClockDebugManualOverride = onApplyClockDebugManualOverride,
+                    onClearClockDebugManualOverride = onClearClockDebugManualOverride,
                     onDebugMinTempChanged = onDebugMinTempChanged,
                     onDebugMaxTempChanged = onDebugMaxTempChanged,
                     onDebugHumidityChanged = onDebugHumidityChanged,
@@ -212,6 +237,13 @@ private fun DashboardContent(
             onDismiss = onDismissReviewInventory
         )
     }
+
+    state.comebackDialogMessage?.let { message ->
+        ComebackDialog(
+            message = message,
+            onDismiss = onDismissComebackDialog
+        )
+    }
 }
 
 @Composable
@@ -224,6 +256,8 @@ private fun OverviewTabContent(
     onRerollSuggestion: () -> Unit,
     onReviewInventory: () -> Unit,
     onRefreshWeather: () -> Unit,
+    onCasualDaySelected: (CasualForecastDay) -> Unit,
+    onCasualSegmentSelected: (CasualForecastSegment) -> Unit,
     modifier: Modifier = Modifier
 ) {
     LazyColumn(
@@ -250,6 +284,16 @@ private fun OverviewTabContent(
                 currentEnvironment = state.environment,
                 onEnvironmentSelected = onEnvironmentSelected
             )
+        }
+
+        state.casualForecast?.let { casualForecastState ->
+            item {
+                CasualForecastPlanner(
+                    state = casualForecastState,
+                    onDaySelected = onCasualDaySelected,
+                    onSegmentSelected = onCasualSegmentSelected
+                )
+            }
         }
 
         state.weather?.let { weather ->
@@ -331,12 +375,81 @@ private fun OverviewTabContent(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CasualForecastPlanner(
+    state: CasualForecastUiState,
+    onDaySelected: (CasualForecastDay) -> Unit,
+    onSegmentSelected: (CasualForecastSegment) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = stringResource(id = R.string.dashboard_casual_forecast_title),
+                style = MaterialTheme.typography.titleMedium
+            )
+
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                state.dayOptions.forEachIndexed { index, day ->
+                    val selected = day == state.selectedDay
+                    SegmentedButton(
+                        selected = selected,
+                        onClick = { onDaySelected(day) },
+                        shape = SegmentedButtonDefaults.itemShape(index, state.dayOptions.size),
+                        label = {
+                            Text(text = stringResource(id = day.labelResId()))
+                        }
+                    )
+                }
+            }
+
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                state.segmentOptions.forEachIndexed { index, option ->
+                    val selected = option.segment == state.selectedSegment
+                    SegmentedButton(
+                        selected = selected,
+                        onClick = { onSegmentSelected(option.segment) },
+                        enabled = option.isEnabled,
+                        shape = SegmentedButtonDefaults.itemShape(index, state.segmentOptions.size),
+                        label = {
+                            Text(text = stringResource(id = option.segment.labelResId()))
+                        }
+                    )
+                }
+            }
+
+            Text(
+                text = stringResource(
+                    id = R.string.dashboard_casual_forecast_summary,
+                    state.summary.averageApparentTemperatureCelsius,
+                    state.summary.minTemperatureCelsius,
+                    state.summary.maxTemperatureCelsius
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
 @Composable
 private fun DebugTabContent(
     weatherDebug: WeatherDebugUiState?,
     clockDebug: ClockDebugUiState?,
     wearFeedbackDebug: WearFeedbackDebugUiState?,
     onClockDebugNextDayChanged: (Boolean) -> Unit,
+    onClockDebugManualInputChanged: (String) -> Unit,
+    onApplyClockDebugManualOverride: () -> Unit,
+    onClearClockDebugManualOverride: () -> Unit,
     onDebugMinTempChanged: (String) -> Unit,
     onDebugMaxTempChanged: (String) -> Unit,
     onDebugHumidityChanged: (String) -> Unit,
@@ -375,7 +488,10 @@ private fun DebugTabContent(
                 item {
                     ClockDebugCard(
                         state = clockState,
-                        onToggleNextDay = onClockDebugNextDayChanged
+                        onToggleNextDay = onClockDebugNextDayChanged,
+                        onManualInputChanged = onClockDebugManualInputChanged,
+                        onApplyManualOverride = onApplyClockDebugManualOverride,
+                        onClearManualOverride = onClearClockDebugManualOverride
                     )
                 }
             }
@@ -427,6 +543,19 @@ private fun DashboardTabSelector(
             )
         }
     }
+}
+
+@StringRes
+private fun CasualForecastDay.labelResId(): Int = when (this) {
+    CasualForecastDay.TODAY -> R.string.dashboard_casual_forecast_day_today
+    CasualForecastDay.TOMORROW -> R.string.dashboard_casual_forecast_day_tomorrow
+}
+
+@StringRes
+private fun CasualForecastSegment.labelResId(): Int = when (this) {
+    CasualForecastSegment.MORNING -> R.string.dashboard_casual_forecast_segment_morning
+    CasualForecastSegment.AFTERNOON -> R.string.dashboard_casual_forecast_segment_afternoon
+    CasualForecastSegment.EVENING -> R.string.dashboard_casual_forecast_segment_evening
 }
 
 @Composable
@@ -558,6 +687,33 @@ private fun InventoryReviewDialog(
                     )
                 }
             }
+        }
+    )
+}
+
+@Composable
+private fun ComebackDialog(
+    message: UiMessage,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = stringResource(id = R.string.dashboard_comeback_dialog_close))
+            }
+        },
+        title = {
+            Text(text = stringResource(id = R.string.dashboard_comeback_dialog_title))
+        },
+        text = {
+            Text(
+                text = message.resolve(),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = modifier
+            )
         }
     )
 }
@@ -806,7 +962,10 @@ private fun WeatherDebugCard(
 @Composable
 private fun ClockDebugCard(
     state: ClockDebugUiState,
-    onToggleNextDay: (Boolean) -> Unit
+    onToggleNextDay: (Boolean) -> Unit,
+    onManualInputChanged: (String) -> Unit,
+    onApplyManualOverride: () -> Unit,
+    onClearManualOverride: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -848,12 +1007,67 @@ private fun ClockDebugCard(
                     color = MaterialTheme.colorScheme.primary
                 )
             }
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = stringResource(id = R.string.debug_clock_manual_label),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                OutlinedTextField(
+                    value = state.manualOverrideInput,
+                    onValueChange = onManualInputChanged,
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+                    placeholder = {
+                        Text(text = stringResource(id = R.string.debug_clock_manual_placeholder))
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    text = stringResource(id = R.string.debug_clock_manual_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Button(
+                        onClick = onApplyManualOverride,
+                        enabled = state.manualOverrideInput.isNotBlank()
+                    ) {
+                        Text(text = stringResource(id = R.string.debug_clock_manual_apply))
+                    }
+                    OutlinedButton(
+                        onClick = onClearManualOverride,
+                        enabled = state.isManualOverrideActive
+                    ) {
+                        Text(text = stringResource(id = R.string.debug_clock_manual_clear))
+                    }
+                }
+            }
+            if (state.isManualOverrideActive) {
+                val manualLabel = state.manualOverrideLabel ?: state.manualOverrideInput
+                if (manualLabel.isNotBlank()) {
+                    Text(
+                        text = stringResource(id = R.string.debug_clock_manual_active, manualLabel),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
             state.lastAppliedAt?.let { instant ->
                 val label = formatWeatherTimestamp(instant)
                 Text(
                     text = stringResource(id = R.string.debug_clock_last_applied, label),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            state.errorMessage?.let { message ->
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
                 )
             }
         }
@@ -1268,7 +1482,22 @@ private fun DashboardScreenPreview() {
                     weatherErrorMessage = UiMessage(R.string.dashboard_weather_error),
                     weatherDebug = weatherDebugState,
                     clockDebug = clockDebugState,
-                    wearFeedbackDebug = feedbackDebugState
+                    wearFeedbackDebug = feedbackDebugState,
+                    casualForecast = CasualForecastUiState(
+                        dayOptions = listOf(CasualForecastDay.TODAY, CasualForecastDay.TOMORROW),
+                        segmentOptions = listOf(
+                            CasualForecastSegmentOption(CasualForecastSegment.MORNING, true),
+                            CasualForecastSegmentOption(CasualForecastSegment.AFTERNOON, true),
+                            CasualForecastSegmentOption(CasualForecastSegment.EVENING, false)
+                        ),
+                        selectedDay = CasualForecastDay.TODAY,
+                        selectedSegment = CasualForecastSegment.AFTERNOON,
+                        summary = CasualForecastSummary(
+                            minTemperatureCelsius = 21.0,
+                            maxTemperatureCelsius = 24.0,
+                            averageApparentTemperatureCelsius = 22.5
+                        )
+                    )
                 ),
                 onModeSelected = {},
                 onEnvironmentSelected = {},
@@ -1278,7 +1507,13 @@ private fun DashboardScreenPreview() {
                 onReviewInventory = {},
                 onDismissReviewInventory = {},
                 onRefreshWeather = {},
+                onCasualDaySelected = {},
+                onCasualSegmentSelected = {},
                 onClockDebugNextDayChanged = {},
+                onClockDebugManualInputChanged = {},
+                onApplyClockDebugManualOverride = {},
+                onClearClockDebugManualOverride = {},
+                onDismissComebackDialog = {},
                 onDebugMinTempChanged = {},
                 onDebugMaxTempChanged = {},
                 onDebugHumidityChanged = {},

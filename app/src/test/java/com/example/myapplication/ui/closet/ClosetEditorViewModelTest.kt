@@ -131,6 +131,47 @@ class ClosetEditorViewModelTest {
         assertTrue(viewModel.uiState.value.saveCompleted)
     }
 
+    @Test
+    fun onStatusSelected_updatesStateWhenAddingNewItem() = runTest(mainDispatcherRule.dispatcher()) {
+        val closetRepository = FakeClosetRepository(emptyList())
+        val preferencesRepository = FakeUserPreferencesRepository()
+        val viewModel = ClosetEditorViewModel(
+            closetRepository = closetRepository,
+            userPreferencesRepository = preferencesRepository,
+            existingItemId = null
+        )
+
+        viewModel.onStatusSelected(LaundryStatus.DIRTY)
+
+        assertEquals(LaundryStatus.DIRTY, viewModel.uiState.value.status)
+    }
+
+    @Test
+    fun onSave_withDirtyStatusMarksItemAsDirty() = runTest(mainDispatcherRule.dispatcher()) {
+        val closetRepository = FakeClosetRepository(emptyList())
+        val preferencesRepository = FakeUserPreferencesRepository()
+        val viewModel = ClosetEditorViewModel(
+            closetRepository = closetRepository,
+            userPreferencesRepository = preferencesRepository,
+            existingItemId = null
+        )
+
+        viewModel.onNameChanged("テストアイテム")
+        val categoryOption = closetCategoryOptions().first()
+        val colorOption = closetColorOptions().first()
+        viewModel.onCategorySelected(categoryOption)
+        viewModel.onColorSelected(colorOption)
+        viewModel.onStatusSelected(LaundryStatus.DIRTY)
+
+        viewModel.onSave()
+        advanceUntilIdle()
+
+        val savedItem = closetRepository.lastUpserted
+        assertNotNull(savedItem)
+        assertEquals(LaundryStatus.DIRTY, savedItem!!.status)
+        assertEquals(savedItem.maxWears, savedItem.currentWears)
+    }
+
     private class FakeClosetRepository(initialItems: List<ClothingItem>) : ClosetRepository {
         private val items = initialItems.associateBy { it.id }.toMutableMap()
         private val state = MutableStateFlow(items.values.toList())

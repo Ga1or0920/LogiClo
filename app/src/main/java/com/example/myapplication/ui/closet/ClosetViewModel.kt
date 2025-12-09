@@ -10,6 +10,7 @@ import com.example.myapplication.ui.closet.model.ClosetItemUi
 import com.example.myapplication.ui.closet.model.ClosetFilters
 import com.example.myapplication.ui.closet.model.ClosetUiState
 import com.example.myapplication.ui.common.labelResId
+import com.example.myapplication.util.time.InstantCompat
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -99,6 +100,49 @@ class ClosetViewModel(
 
     fun onFiltersCleared() {
         attributeFilters.value = ClosetFilters()
+    }
+
+    fun onIncrementWearCount(itemId: String) {
+        viewModelScope.launch {
+            val item = closetRepository.getItem(itemId) ?: return@launch
+            val updatedWear = (item.currentWears + 1).coerceAtMost(item.maxWears)
+            val shouldMarkDirty = item.isAlwaysWash || updatedWear >= item.maxWears
+            val updatedStatus = if (shouldMarkDirty) LaundryStatus.DIRTY else LaundryStatus.CLOSET
+            val lastWorn = InstantCompat.nowOrNull() ?: item.lastWornDate
+            closetRepository.upsert(
+                item.copy(
+                    currentWears = updatedWear,
+                    status = updatedStatus,
+                    lastWornDate = lastWorn
+                )
+            )
+        }
+    }
+
+    fun onMarkItemDirty(itemId: String) {
+        viewModelScope.launch {
+            val item = closetRepository.getItem(itemId) ?: return@launch
+            val lastWorn = InstantCompat.nowOrNull() ?: item.lastWornDate
+            closetRepository.upsert(
+                item.copy(
+                    status = LaundryStatus.DIRTY,
+                    currentWears = item.maxWears,
+                    lastWornDate = lastWorn
+                )
+            )
+        }
+    }
+
+    fun onResetWearCount(itemId: String) {
+        viewModelScope.launch {
+            val item = closetRepository.getItem(itemId) ?: return@launch
+            closetRepository.upsert(
+                item.copy(
+                    status = LaundryStatus.CLOSET,
+                    currentWears = 0
+                )
+            )
+        }
     }
 
     private fun ClosetFilters.matches(item: ClothingItem): Boolean {

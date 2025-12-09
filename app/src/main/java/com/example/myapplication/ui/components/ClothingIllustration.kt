@@ -131,6 +131,9 @@ private fun clothingPathData(category: ClothingCategory): ClothingPathData = whe
     ClothingCategory.KNIT,
     ClothingCategory.SWEATSHIRT,
     ClothingCategory.JACKET,
+    ClothingCategory.OUTER_LIGHT,
+    ClothingCategory.DOWN,
+    ClothingCategory.COAT,
     ClothingCategory.UNKNOWN -> ClothingPathData(
         fillAndStroke = listOf(buildTopPath())
     )
@@ -140,13 +143,6 @@ private fun clothingPathData(category: ClothingCategory): ClothingPathData = whe
     ClothingCategory.CHINO -> ClothingPathData(
         fillAndStroke = listOf(buildBottomsPath()),
         strokeOnly = listOf(buildBottomsCenterSeamPath())
-    )
-
-    ClothingCategory.OUTER_LIGHT,
-    ClothingCategory.DOWN,
-    ClothingCategory.COAT -> ClothingPathData(
-        fillAndStroke = listOf(buildOuterPath()),
-        strokeOnly = listOf(buildOuterDetailPath())
     )
 
     ClothingCategory.INNER -> ClothingPathData(
@@ -185,26 +181,6 @@ private fun buildBottomsPath(): Path = Path().apply {
 private fun buildBottomsCenterSeamPath(): Path = Path().apply {
     moveTo(12f, 4f)
     lineTo(12f, 8f)
-}
-
-private fun buildOuterPath(): Path = Path().apply {
-    moveTo(5f, 5f)
-    lineTo(9f, 5f)
-    lineTo(12f, 3f)
-    lineTo(15f, 5f)
-    lineTo(19f, 5f)
-    lineTo(17f, 21f)
-    lineTo(14f, 21f)
-    lineTo(14f, 12f)
-    lineTo(10f, 12f)
-    lineTo(10f, 21f)
-    lineTo(7f, 21f)
-    close()
-}
-
-private fun buildOuterDetailPath(): Path = Path().apply {
-    moveTo(10f, 8f)
-    lineTo(14f, 8f)
 }
 
 private fun buildInnerPath(): Path = Path().apply {

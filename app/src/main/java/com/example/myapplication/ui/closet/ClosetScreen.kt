@@ -3,6 +3,8 @@ package com.example.myapplication.ui.closet
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -94,6 +96,9 @@ fun ClosetScreen(
             onFiltersApplied = viewModel::onFiltersApplied,
             onFiltersCleared = viewModel::onFiltersCleared,
             onDeleteItem = viewModel::onDeleteItem,
+            onIncrementWear = viewModel::onIncrementWearCount,
+            onMarkDirty = viewModel::onMarkItemDirty,
+            onResetWear = viewModel::onResetWearCount,
             onEditItem = onEditItem,
             modifier = modifier
                 .padding(innerPadding)
@@ -111,6 +116,9 @@ private fun ClosetContent(
     onFiltersApplied: (ClosetFilters) -> Unit,
     onFiltersCleared: () -> Unit,
     onDeleteItem: (String) -> Unit,
+    onIncrementWear: (String) -> Unit,
+    onMarkDirty: (String) -> Unit,
+    onResetWear: (String) -> Unit,
     onEditItem: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -174,7 +182,14 @@ private fun ClosetContent(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         } else {
-            ClosetItemList(items = state.items, onDeleteItem = onDeleteItem, onEditItem = onEditItem)
+            ClosetItemList(
+                items = state.items,
+                onDeleteItem = onDeleteItem,
+                onEditItem = onEditItem,
+                onIncrementWear = onIncrementWear,
+                onMarkDirty = onMarkDirty,
+                onResetWear = onResetWear
+            )
         }
 
         if (state.isFilterDialogVisible) {
@@ -195,14 +210,24 @@ private fun ClosetContent(
 private fun ClosetItemList(
     items: List<ClosetItemUi>,
     onDeleteItem: (String) -> Unit,
-    onEditItem: (String) -> Unit
+    onEditItem: (String) -> Unit,
+    onIncrementWear: (String) -> Unit,
+    onMarkDirty: (String) -> Unit,
+    onResetWear: (String) -> Unit
 ) {
     LazyColumn(
         verticalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(bottom = 80.dp)
     ) {
         items(items, key = { it.id }) { item ->
-            ClosetItemCard(item = item, onDeleteItem = onDeleteItem, onEditItem = onEditItem)
+            ClosetItemCard(
+                item = item,
+                onDeleteItem = onDeleteItem,
+                onEditItem = onEditItem,
+                onIncrementWear = onIncrementWear,
+                onMarkDirty = onMarkDirty,
+                onResetWear = onResetWear
+            )
         }
     }
 }
@@ -351,11 +376,15 @@ private fun FilterOptionRow(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ClosetItemCard(
     item: ClosetItemUi,
     onDeleteItem: (String) -> Unit,
-    onEditItem: (String) -> Unit
+    onEditItem: (String) -> Unit,
+    onIncrementWear: (String) -> Unit,
+    onMarkDirty: (String) -> Unit,
+    onResetWear: (String) -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -399,19 +428,26 @@ private fun ClosetItemCard(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            Row(
+            val wearCountText = if (item.isAlwaysWash) {
+                stringResource(id = R.string.closet_wear_count_always, item.currentWears)
+            } else {
+                stringResource(id = R.string.closet_wear_count_numeric, item.currentWears, item.maxWears)
+            }
+            val cleaningTypeLabel = stringResource(id = item.cleaningType.labelResId())
+            val statusLabel = stringResource(id = item.status.labelResId())
+
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                val wearCountText = if (item.isAlwaysWash) {
-                    stringResource(id = R.string.closet_wear_count_always, item.currentWears)
-                } else {
-                    stringResource(id = R.string.closet_wear_count_numeric, item.currentWears, item.maxWears)
-                }
                 Text(text = wearCountText, style = MaterialTheme.typography.bodyMedium)
-                val cleaningTypeLabel = stringResource(id = item.cleaningType.labelResId())
                 Text(
                     text = stringResource(id = R.string.item_cleaning_type, cleaningTypeLabel),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Text(
+                    text = stringResource(id = R.string.closet_item_status_label, statusLabel),
                     style = MaterialTheme.typography.bodyMedium
                 )
                 if (item.isAlwaysWash) {
@@ -420,6 +456,27 @@ private fun ClosetItemCard(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.primary
                     )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                TextButton(onClick = { onIncrementWear(item.id) }) {
+                    Text(text = stringResource(id = R.string.closet_action_increment_wear))
+                }
+                TextButton(onClick = { onMarkDirty(item.id) }) {
+                    Text(text = stringResource(id = R.string.closet_action_mark_dirty))
+                }
+                TextButton(
+                    onClick = { onResetWear(item.id) },
+                    enabled = item.currentWears > 0 || item.status != LaundryStatus.CLOSET
+                ) {
+                    Text(text = stringResource(id = R.string.closet_action_reset_wear))
                 }
             }
         }
@@ -458,6 +515,9 @@ private fun ClosetScreenPreview() {
             onFiltersApplied = {},
             onFiltersCleared = {},
             onDeleteItem = {},
+            onIncrementWear = {},
+            onMarkDirty = {},
+            onResetWear = {},
             onEditItem = {}
         )
     }

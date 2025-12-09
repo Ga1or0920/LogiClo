@@ -1,5 +1,7 @@
 package com.example.myapplication.ui.dashboard.model
 
+import com.example.myapplication.domain.model.CasualForecastDay
+import com.example.myapplication.domain.model.CasualForecastSegment
 import com.example.myapplication.domain.model.ClothingItem
 import com.example.myapplication.domain.model.EnvironmentMode
 import com.example.myapplication.domain.model.TpoMode
@@ -43,7 +45,28 @@ data class DashboardUiState(
     val purchaseRecommendations: List<UiMessage> = emptyList(),
     val weatherDebug: WeatherDebugUiState? = null,
     val clockDebug: ClockDebugUiState? = null,
-    val wearFeedbackDebug: WearFeedbackDebugUiState? = null
+    val wearFeedbackDebug: WearFeedbackDebugUiState? = null,
+    val casualForecast: CasualForecastUiState? = null,
+    val comebackDialogMessage: UiMessage? = null
+)
+
+data class CasualForecastUiState(
+    val dayOptions: List<CasualForecastDay>,
+    val segmentOptions: List<CasualForecastSegmentOption>,
+    val selectedDay: CasualForecastDay,
+    val selectedSegment: CasualForecastSegment,
+    val summary: CasualForecastSummary
+)
+
+data class CasualForecastSegmentOption(
+    val segment: CasualForecastSegment,
+    val isEnabled: Boolean
+)
+
+data class CasualForecastSummary(
+    val minTemperatureCelsius: Double,
+    val maxTemperatureCelsius: Double,
+    val averageApparentTemperatureCelsius: Double
 )
 
 data class WeatherDebugUiState(

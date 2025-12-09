@@ -12,6 +12,9 @@ import com.example.myapplication.domain.model.Thickness
 import com.example.myapplication.domain.model.TpoMode
 import com.example.myapplication.domain.model.UserPreferences
 import com.example.myapplication.domain.model.EnvironmentMode
+import com.example.myapplication.domain.model.CasualForecastDay
+import com.example.myapplication.domain.model.CasualForecastSegment
+import com.example.myapplication.domain.model.CasualForecastSegmentSummary
 import com.example.myapplication.domain.model.WeatherSnapshot
 
 object SampleData {
@@ -412,6 +415,29 @@ object SampleData {
         minTemperatureCelsius = 18.0,
         maxTemperatureCelsius = 27.0,
         humidityPercent = 65,
-        updatedAt = null
+        updatedAt = null,
+        casualSegmentSummaries = listOf(
+            CasualForecastSegmentSummary(
+                day = CasualForecastDay.TODAY,
+                segment = CasualForecastSegment.MORNING,
+                minTemperatureCelsius = 17.5,
+                maxTemperatureCelsius = 19.5,
+                averageApparentTemperatureCelsius = 18.6
+            ),
+            CasualForecastSegmentSummary(
+                day = CasualForecastDay.TODAY,
+                segment = CasualForecastSegment.AFTERNOON,
+                minTemperatureCelsius = 21.0,
+                maxTemperatureCelsius = 24.0,
+                averageApparentTemperatureCelsius = 22.8
+            ),
+            CasualForecastSegmentSummary(
+                day = CasualForecastDay.TOMORROW,
+                segment = CasualForecastSegment.MORNING,
+                minTemperatureCelsius = 18.0,
+                maxTemperatureCelsius = 20.0,
+                averageApparentTemperatureCelsius = 19.0
+            )
+        )
     )
 }
