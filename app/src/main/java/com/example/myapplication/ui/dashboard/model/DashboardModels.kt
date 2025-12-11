@@ -38,6 +38,9 @@ data class DashboardUiState(
     val isInventoryReviewVisible: Boolean = false,
     val alert: InventoryAlert? = null,
     val weather: WeatherSnapshot? = null,
+    val weatherLocation: WeatherLocationUiState = WeatherLocationUiState(),
+    val locationSearch: LocationSearchUiState = LocationSearchUiState(),
+    val mapPicker: MapPickerUiState = MapPickerUiState(),
     val selectedSuggestion: OutfitSuggestion? = null,
     val isRefreshingWeather: Boolean = false,
     val lastWeatherUpdatedAt: Instant? = null,
@@ -48,6 +51,42 @@ data class DashboardUiState(
     val wearFeedbackDebug: WearFeedbackDebugUiState? = null,
     val casualForecast: CasualForecastUiState? = null,
     val comebackDialogMessage: UiMessage? = null
+)
+
+data class WeatherLocationUiState(
+    val displayLabel: String = "",
+    val description: String? = null,
+    val isOverrideActive: Boolean = false,
+    val isDialogVisible: Boolean = false,
+    val labelInput: String = "",
+    val latitudeInput: String = "",
+    val longitudeInput: String = "",
+    val errorMessage: String? = null
+)
+
+data class LocationSearchUiState(
+    val isVisible: Boolean = false,
+    val query: String = "",
+    val isSearching: Boolean = false,
+    val results: List<LocationSearchResultUiState> = emptyList(),
+    val errorMessage: String? = null
+)
+
+data class LocationSearchResultUiState(
+    val id: String,
+    val title: String,
+    val subtitle: String?
+)
+
+data class MapPickerUiState(
+    val isVisible: Boolean = false,
+    val labelInput: String = "",
+    val latitude: Double = 0.0,
+    val longitude: Double = 0.0,
+    val hasLocationSelection: Boolean = false,
+    val errorMessage: String? = null,
+    val isConfirmEnabled: Boolean = false,
+    val zoom: Float = 0f
 )
 
 data class CasualForecastUiState(

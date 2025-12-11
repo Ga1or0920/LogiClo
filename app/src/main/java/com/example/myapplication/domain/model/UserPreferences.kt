@@ -17,7 +17,8 @@ data class UserPreferences(
     val lastSelectedEnvironment: EnvironmentMode = EnvironmentMode.OUTDOOR,
     val tempOffsets: Map<Thickness, Int> = emptyMap(),
     val colorRules: ColorRules = ColorRules(),
-    val defaultMaxWears: Map<ClothingCategory, Int> = emptyMap()
+    val defaultMaxWears: Map<ClothingCategory, Int> = emptyMap(),
+    val weatherLocationOverride: WeatherLocationOverride? = null
 )
 
 enum class TpoMode(val backendValue: String) {

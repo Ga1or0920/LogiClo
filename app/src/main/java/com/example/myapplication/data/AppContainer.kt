@@ -8,11 +8,14 @@ import com.example.myapplication.data.repository.ClosetRepository
 import com.example.myapplication.data.repository.InMemoryClosetRepository
 import com.example.myapplication.data.repository.InMemoryUserPreferencesRepository
 import com.example.myapplication.data.repository.InMemoryWearFeedbackRepository
+import com.example.myapplication.data.repository.InMemoryLocationSearchRepository
 import com.example.myapplication.data.repository.RoomClosetRepository
 import com.example.myapplication.data.repository.RoomUserPreferencesRepository
 import com.example.myapplication.data.repository.RoomWearFeedbackRepository
 import com.example.myapplication.data.repository.UserPreferencesRepository
 import com.example.myapplication.data.repository.WearFeedbackRepository
+import com.example.myapplication.data.repository.LocationSearchRepository
+import com.example.myapplication.data.repository.GeocoderLocationSearchRepository
 import com.example.myapplication.data.sample.SampleData
 import com.example.myapplication.data.weather.DebugWeatherRepository
 import com.example.myapplication.data.weather.InMemoryWeatherRepository
@@ -24,6 +27,7 @@ import com.example.myapplication.data.weather.WeatherDebugControllerImpl
 import com.example.myapplication.data.weather.WeatherRepository
 import com.example.myapplication.domain.model.ClothingItem
 import com.example.myapplication.domain.model.UserPreferences
+import com.example.myapplication.domain.model.WeatherLocationOverride
 import com.example.myapplication.domain.model.WeatherSnapshot
 import com.example.myapplication.domain.usecase.WearFeedbackReminderScheduler
 import com.example.myapplication.util.time.DebugClockController
@@ -42,6 +46,7 @@ interface AppContainer {
     val wearFeedbackRepository: WearFeedbackRepository
     val weatherDebugController: WeatherDebugController
     val clockDebugController: DebugClockController
+    val locationSearchRepository: LocationSearchRepository
 }
 
 class DefaultAppContainer(
@@ -70,6 +75,8 @@ class DefaultAppContainer(
         if (isDebugBuild) PersistentWeatherDebugController(context) else NoOpWeatherDebugController
     private val clockDebugControllerImpl: DebugClockController =
         if (isDebugBuild) DebugClockControllerImpl() else NoOpDebugClockController
+    override val locationSearchRepository: LocationSearchRepository =
+        GeocoderLocationSearchRepository(context)
     override val weatherRepository: WeatherRepository = DebugWeatherRepository(
         delegate = openMeteoWeatherRepository,
         debugController = weatherDebugControllerImpl
@@ -82,7 +89,6 @@ class DefaultAppContainer(
         InstantCompat.registerDebugOffsetProvider(clockDebugControllerImpl::currentOffsetMillis)
         appScope.launch(Dispatchers.IO) {
             seedDatabaseIfNeeded(seedClosetItems, seedPreferences)
-            openMeteoWeatherRepository.refresh()
         }
         appScope.launch(Dispatchers.IO) {
             wearFeedbackRepository.observeLatestPending().collectLatest { entry ->
@@ -90,10 +96,27 @@ class DefaultAppContainer(
             }
         }
         appScope.launch(Dispatchers.IO) {
+            var lastCoordinates: OpenMeteoWeatherRepository.Coordinates? = null
+            userPreferencesRepository.observe().collectLatest { preferences ->
+                val override = preferences.weatherLocationOverride
+                val targetCoordinates = override?.toCoordinates() ?: TOKYO_COORDINATES
+                if (lastCoordinates != targetCoordinates) {
+                    openMeteoWeatherRepository.updateCoordinates(targetCoordinates)
+                    openMeteoWeatherRepository.refresh()
+                    lastCoordinates = targetCoordinates
+                }
+            }
+        }
+        appScope.launch(Dispatchers.IO) {
             val thirtyDaysAgo = System.currentTimeMillis() - THIRTY_DAYS_IN_MILLIS
             wearFeedbackRepository.pruneHistory(thirtyDaysAgo)
         }
     }
+private fun WeatherLocationOverride.toCoordinates(): OpenMeteoWeatherRepository.Coordinates =
+    OpenMeteoWeatherRepository.Coordinates(
+        latitude = latitude,
+        longitude = longitude
+    )
 
     private suspend fun seedDatabaseIfNeeded(
         closetSeed: List<ClothingItem>,
@@ -135,6 +158,7 @@ class InMemoryAppContainer(
         if (isDebugBuild) WeatherDebugControllerImpl() else NoOpWeatherDebugController
     private val clockDebugControllerImpl: DebugClockController =
         if (isDebugBuild) DebugClockControllerImpl() else NoOpDebugClockController
+    override val locationSearchRepository: LocationSearchRepository = InMemoryLocationSearchRepository()
     override val weatherRepository: WeatherRepository = DebugWeatherRepository(
         delegate = inMemoryWeatherRepository,
         debugController = weatherDebugControllerImpl

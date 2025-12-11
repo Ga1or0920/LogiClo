@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.myapplication.R
 import com.example.myapplication.data.repository.ClosetRepository
+import com.example.myapplication.data.repository.LocationSearchRepository
 import com.example.myapplication.data.repository.UserPreferencesRepository
 import com.example.myapplication.data.repository.WearFeedbackRepository
 import com.example.myapplication.data.weather.NoOpWeatherDebugController
@@ -24,6 +25,8 @@ import com.example.myapplication.domain.model.LaundryStatus
 import com.example.myapplication.domain.model.EnvironmentMode
 import com.example.myapplication.domain.model.TpoMode
 import com.example.myapplication.domain.model.WeatherSnapshot
+import com.example.myapplication.domain.model.WeatherLocationOverride
+import com.example.myapplication.domain.model.LocationSearchResult
 import com.example.myapplication.domain.model.UserPreferences
 import com.example.myapplication.domain.model.formatClothingDisplayLabel
 import com.example.myapplication.domain.usecase.ApplyWearUseCase
@@ -50,6 +53,10 @@ import com.example.myapplication.ui.dashboard.model.OutfitSuggestion
 import com.example.myapplication.ui.dashboard.model.CasualForecastSegmentOption
 import com.example.myapplication.ui.dashboard.model.CasualForecastSummary
 import com.example.myapplication.ui.dashboard.model.CasualForecastUiState
+import com.example.myapplication.ui.dashboard.model.WeatherLocationUiState
+import com.example.myapplication.ui.dashboard.model.LocationSearchUiState
+import com.example.myapplication.ui.dashboard.model.LocationSearchResultUiState
+import com.example.myapplication.ui.dashboard.model.MapPickerUiState
 import com.example.myapplication.ui.dashboard.model.WeatherDebugUiState
 import com.example.myapplication.ui.dashboard.model.WearFeedbackDebugUiState
 import com.example.myapplication.ui.common.UiMessage
@@ -64,7 +71,16 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.CancellationException
 import kotlin.collections.buildList
+
+private const val LOCATION_SEARCH_MIN_QUERY = 2
+private const val LOCATION_SEARCH_DEBOUNCE_MILLIS = 400L
+private const val DEFAULT_MAP_LATITUDE = 35.681236
+private const val DEFAULT_MAP_LONGITUDE = 139.767125
+private const val DEFAULT_MAP_ZOOM = 9.5f
 
 class DashboardViewModel(
     private val closetRepository: ClosetRepository,
@@ -76,6 +92,7 @@ class DashboardViewModel(
     private val formalScoreCalculator: FormalScoreCalculator,
     private val weatherSuitabilityEvaluator: WeatherSuitabilityEvaluator,
     private val applyWearUseCase: ApplyWearUseCase,
+    private val locationSearchRepository: LocationSearchRepository,
     private val stringResolver: (Int) -> String
 ) : ViewModel() {
 
@@ -86,6 +103,9 @@ class DashboardViewModel(
     private val weatherStatus = MutableStateFlow(WeatherRefreshStatus())
     private var suggestionCache: List<OutfitSuggestion> = emptyList()
     private val casualForecastSelection = MutableStateFlow(CasualForecastSelection())
+    private val locationEditorState = MutableStateFlow(LocationEditorState())
+    private val locationSearchState = MutableStateFlow(LocationSearchState())
+    private val mapPickerState = MutableStateFlow(MapPickerState())
     private val reviewDialogState = MutableStateFlow(false)
     private val weatherDebugState = MutableStateFlow(
         if (weatherDebugController.isSupported) WeatherDebugUiState() else null
@@ -97,6 +117,8 @@ class DashboardViewModel(
         if (clockDebugController.isSupported || weatherDebugController.isSupported) WearFeedbackDebugUiState() else null
     )
     private val comebackDialogState = MutableStateFlow<UiMessage?>(null)
+    private var latestPreferences: UserPreferences = UserPreferences()
+    private var locationSearchJob: Job? = null
 
     private val _wearNotificationEvents = MutableSharedFlow<List<UiMessage>>(extraBufferCapacity = 1)
     val wearNotificationEvents = _wearNotificationEvents.asSharedFlow()
@@ -159,11 +181,23 @@ class DashboardViewModel(
                     combined to reviewVisible
                 }
                 .combine(comebackDialogState) { (combined, reviewVisible), comebackMessage ->
-                    val inputs = combined.base
-                    val weatherDebug = combined.weatherDebug
-                    val clockDebug = combined.clockDebug
-                    val wearFeedback = combined.wearFeedback
+                    Triple(combined, reviewVisible, comebackMessage)
+                }
+                .combine(locationEditorState) { (combined, reviewVisible, comebackMessage), locationEditor ->
+                    Triple(combined, reviewVisible, comebackMessage) to locationEditor
+                }
+                .combine(locationSearchState) { (combined, locationEditor), locationSearch ->
+                    Triple(combined.first, combined.second, combined.third) to Pair(locationEditor, locationSearch)
+                }
+                .combine(mapPickerState) { (combined, editorAndSearch), mapPicker ->
+                    val (inputsWithDebug, reviewVisible, comebackMessage) = combined
+                    val (locationEditor, locationSearch) = editorAndSearch
+                    val inputs = inputsWithDebug.base
+                    val weatherDebug = inputsWithDebug.weatherDebug
+                    val clockDebug = inputsWithDebug.clockDebug
+                    val wearFeedback = inputsWithDebug.wearFeedback
                     val preferences = inputs.preferences
+                    latestPreferences = preferences
                     val items = inputs.items
                     val weather = inputs.weather
                     val weatherStatus = inputs.weatherStatus
@@ -231,6 +265,29 @@ class DashboardViewModel(
                         )
                     } ?: emptyList()
 
+                    val locationOverride = preferences.weatherLocationOverride
+                    val locationDisplayLabel = locationOverride?.let {
+                        val template = stringResolver(R.string.dashboard_weather_location_override_label)
+                        String.format(Locale.getDefault(), template, it.label)
+                    } ?: stringResolver(R.string.dashboard_weather_location_default_label)
+                    val locationDescription = locationOverride?.let {
+                        val template = stringResolver(R.string.dashboard_weather_location_coordinates)
+                        String.format(Locale.getDefault(), template, it.latitude, it.longitude)
+                    }
+                    val weatherLocationUiState = WeatherLocationUiState(
+                        displayLabel = locationDisplayLabel,
+                        description = locationDescription,
+                        isOverrideActive = locationOverride != null,
+                        isDialogVisible = locationEditor.isVisible,
+                        labelInput = locationEditor.labelInput,
+                        latitudeInput = locationEditor.latitudeInput,
+                        longitudeInput = locationEditor.longitudeInput,
+                        errorMessage = locationEditor.errorMessage
+                    )
+
+                    val locationSearchUiState = locationSearch.toUiState()
+                    val mapPickerUiState = mapPicker.toUiState()
+
                     buildInventoryReviewMessages(
                         alert,
                         suggestionResult.recommendations
@@ -242,6 +299,9 @@ class DashboardViewModel(
                             suggestions = previewSuggestions,
                             alert = alert,
                             weather = weather,
+                            weatherLocation = weatherLocationUiState,
+                            locationSearch = locationSearchUiState,
+                            mapPicker = mapPickerUiState,
                             selectedSuggestion = selectedSuggestion,
                             isRefreshingWeather = weatherStatus.isRefreshing,
                             lastWeatherUpdatedAt = weather.updatedAt ?: weatherStatus.lastUpdated,
@@ -1020,6 +1080,10 @@ class DashboardViewModel(
         }
     }
 
+    private fun formatCoordinateInput(value: Double): String {
+        return String.format(Locale.US, "%.4f", value)
+    }
+
     fun onModeSelected(mode: TpoMode) {
         if (_uiState.value.mode == mode) return
         viewModelScope.launch {
@@ -1031,6 +1095,246 @@ class DashboardViewModel(
         if (_uiState.value.environment == environment) return
         viewModelScope.launch {
             userPreferencesRepository.updateLastSelectedEnvironment(environment)
+        }
+    }
+
+    fun onWeatherLocationEditRequested() {
+        val override = latestPreferences.weatherLocationOverride
+        locationEditorState.update { current ->
+            if (current.isVisible) {
+                current.copy(errorMessage = null)
+            } else {
+                current.copy(
+                    isVisible = true,
+                    labelInput = override?.label.orEmpty(),
+                    latitudeInput = override?.let { formatCoordinateInput(it.latitude) } ?: "",
+                    longitudeInput = override?.let { formatCoordinateInput(it.longitude) } ?: "",
+                    errorMessage = null
+                )
+            }
+        }
+    }
+
+    fun onWeatherLocationDialogDismissed() {
+        locationEditorState.value = LocationEditorState()
+    }
+
+    fun onWeatherLocationLabelChanged(value: String) {
+        locationEditorState.update { current -> current.copy(labelInput = value, errorMessage = null) }
+    }
+
+    fun onWeatherLocationLatitudeChanged(value: String) {
+        locationEditorState.update { current -> current.copy(latitudeInput = value, errorMessage = null) }
+    }
+
+    fun onWeatherLocationLongitudeChanged(value: String) {
+        locationEditorState.update { current -> current.copy(longitudeInput = value, errorMessage = null) }
+    }
+
+    fun onApplyWeatherLocationOverride() {
+        val editorState = locationEditorState.value
+        val label = editorState.labelInput.trim()
+        if (label.isEmpty()) {
+            val message = stringResolver(R.string.dashboard_weather_location_error_label_blank)
+            locationEditorState.update { current -> current.copy(errorMessage = message) }
+            return
+        }
+        val latitude = editorState.latitudeInput.toDoubleOrNull()
+        if (latitude == null || latitude !in -90.0..90.0) {
+            val message = stringResolver(R.string.dashboard_weather_location_error_latitude)
+            locationEditorState.update { current -> current.copy(errorMessage = message) }
+            return
+        }
+        val longitude = editorState.longitudeInput.toDoubleOrNull()
+        if (longitude == null || longitude !in -180.0..180.0) {
+            val message = stringResolver(R.string.dashboard_weather_location_error_longitude)
+            locationEditorState.update { current -> current.copy(errorMessage = message) }
+            return
+        }
+        viewModelScope.launch {
+            userPreferencesRepository.update { current ->
+                current.copy(
+                    weatherLocationOverride = WeatherLocationOverride(
+                        label = label,
+                        latitude = latitude,
+                        longitude = longitude
+                    )
+                )
+            }
+            locationEditorState.value = LocationEditorState()
+        }
+    }
+
+    fun onUseDeviceLocationSelected() {
+        viewModelScope.launch {
+            userPreferencesRepository.update { current ->
+                if (current.weatherLocationOverride == null) {
+                    current
+                } else {
+                    current.copy(weatherLocationOverride = null)
+                }
+            }
+            locationEditorState.value = LocationEditorState()
+        }
+    }
+
+    fun onLocationSearchRequested() {
+        if (locationSearchState.value.isVisible) return
+        locationSearchJob?.cancel()
+        locationSearchJob = null
+        locationSearchState.value = LocationSearchState(isVisible = true)
+    }
+
+    fun onLocationSearchDismissed() {
+        locationSearchJob?.cancel()
+        locationSearchJob = null
+        locationSearchState.value = LocationSearchState()
+    }
+
+    fun onLocationSearchQueryChanged(query: String) {
+        if (!locationSearchState.value.isVisible) return
+        val trimmed = query.trim()
+        locationSearchState.update { current ->
+            current.copy(query = query, errorMessage = null, isLoading = trimmed.length >= LOCATION_SEARCH_MIN_QUERY)
+        }
+        locationSearchJob?.cancel()
+        if (trimmed.length < LOCATION_SEARCH_MIN_QUERY) {
+            locationSearchState.update { current ->
+                current.copy(isLoading = false, results = emptyList(), errorMessage = null)
+            }
+            return
+        }
+        locationSearchJob = viewModelScope.launch {
+            delay(LOCATION_SEARCH_DEBOUNCE_MILLIS)
+            try {
+                val results = locationSearchRepository.searchByName(trimmed)
+                locationSearchState.update { current ->
+                    current.copy(
+                        isLoading = false,
+                        results = results,
+                        errorMessage = if (results.isEmpty()) {
+                            stringResolver(R.string.dashboard_weather_location_search_empty)
+                        } else {
+                            null
+                        }
+                    )
+                }
+            } catch (t: Throwable) {
+                if (t is CancellationException) {
+                    throw t
+                }
+                locationSearchState.update { current ->
+                    current.copy(
+                        isLoading = false,
+                        results = emptyList(),
+                        errorMessage = stringResolver(R.string.dashboard_weather_location_search_error)
+                    )
+                }
+            } finally {
+                locationSearchJob = null
+            }
+        }
+    }
+
+    fun onLocationSearchResultSelected(resultId: String) {
+        if (!locationSearchState.value.isVisible) return
+        val index = resultId.toIntOrNull() ?: return
+        val result = locationSearchState.value.results.getOrNull(index) ?: return
+        viewModelScope.launch {
+            userPreferencesRepository.update { current ->
+                current.copy(
+                    weatherLocationOverride = WeatherLocationOverride(
+                        label = result.title,
+                        latitude = result.latitude,
+                        longitude = result.longitude
+                    )
+                )
+            }
+            locationSearchState.value = LocationSearchState()
+        }
+    }
+
+    fun onMapPickerRequested() {
+        if (mapPickerState.value.isVisible) return
+        val override = latestPreferences.weatherLocationOverride
+        val label = override?.label.orEmpty()
+        val latitude = override?.latitude ?: DEFAULT_MAP_LATITUDE
+        val longitude = override?.longitude ?: DEFAULT_MAP_LONGITUDE
+        val zoom = if (override != null) 11f else DEFAULT_MAP_ZOOM
+        mapPickerState.value = MapPickerState(
+            isVisible = true,
+            labelInput = label,
+            latitude = latitude,
+            longitude = longitude,
+            hasLocationSelection = override != null,
+            errorMessage = null,
+            zoom = zoom
+        )
+    }
+
+    fun onMapPickerDismissed() {
+        mapPickerState.value = MapPickerState()
+    }
+
+    fun onMapPickerLabelChanged(value: String) {
+        mapPickerState.update { current ->
+            if (!current.isVisible) current else current.copy(labelInput = value, errorMessage = null)
+        }
+    }
+
+    fun onMapPickerLocationChanged(latitude: Double, longitude: Double) {
+        mapPickerState.update { current ->
+            if (!current.isVisible) {
+                current
+            } else {
+                current.copy(
+                    latitude = latitude,
+                    longitude = longitude,
+                    hasLocationSelection = true,
+                    errorMessage = null,
+                    zoom = if (current.hasLocationSelection) current.zoom else 12f
+                )
+            }
+        }
+    }
+
+    fun onMapPickerConfirmed() {
+        val state = mapPickerState.value
+        if (!state.isVisible) return
+        val label = state.labelInput.trim()
+        if (label.isEmpty()) {
+            val message = stringResolver(R.string.dashboard_weather_location_map_error_label)
+            mapPickerState.update { current -> current.copy(errorMessage = message) }
+            return
+        }
+        if (!state.hasLocationSelection) {
+            val message = stringResolver(R.string.dashboard_weather_location_map_error_location)
+            mapPickerState.update { current -> current.copy(errorMessage = message) }
+            return
+        }
+        val latitude = state.latitude
+        if (latitude !in -90.0..90.0) {
+            val message = stringResolver(R.string.dashboard_weather_location_error_latitude)
+            mapPickerState.update { current -> current.copy(errorMessage = message) }
+            return
+        }
+        val longitude = state.longitude
+        if (longitude !in -180.0..180.0) {
+            val message = stringResolver(R.string.dashboard_weather_location_error_longitude)
+            mapPickerState.update { current -> current.copy(errorMessage = message) }
+            return
+        }
+        viewModelScope.launch {
+            userPreferencesRepository.update { current ->
+                current.copy(
+                    weatherLocationOverride = WeatherLocationOverride(
+                        label = label,
+                        latitude = latitude,
+                        longitude = longitude
+                    )
+                )
+            }
+            mapPickerState.value = MapPickerState()
         }
     }
 
@@ -1080,6 +1384,11 @@ class DashboardViewModel(
         }
     }
 
+    override fun onCleared() {
+        super.onCleared()
+        locationSearchJob?.cancel()
+    }
+
     private companion object {
         const val INDOOR_HALF_RANGE = 2.5
         private const val INACTIVITY_THRESHOLD_DAYS = 7L
@@ -1098,6 +1407,7 @@ class DashboardViewModel(
         private val formalScoreCalculator: FormalScoreCalculator = FormalScoreCalculator(),
         private val weatherSuitabilityEvaluator: WeatherSuitabilityEvaluator = WeatherSuitabilityEvaluator(),
         private val applyWearUseCase: ApplyWearUseCase = ApplyWearUseCase(),
+        private val locationSearchRepository: LocationSearchRepository,
         private val stringResolver: (Int) -> String
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
@@ -1113,6 +1423,7 @@ class DashboardViewModel(
                     formalScoreCalculator = formalScoreCalculator,
                     weatherSuitabilityEvaluator = weatherSuitabilityEvaluator,
                     applyWearUseCase = applyWearUseCase,
+                    locationSearchRepository = locationSearchRepository,
                     stringResolver = stringResolver
                 ) as T
             }
@@ -1184,10 +1495,61 @@ private val OutfitSuggestion.selectionKey: SuggestionSelectionKey
         outerId = outer?.id
     )
 
+private data class LocationSearchState(
+    val isVisible: Boolean = false,
+    val query: String = "",
+    val isLoading: Boolean = false,
+    val results: List<LocationSearchResult> = emptyList(),
+    val errorMessage: String? = null
+)
+
+private data class MapPickerState(
+    val isVisible: Boolean = false,
+    val labelInput: String = "",
+    val latitude: Double = DEFAULT_MAP_LATITUDE,
+    val longitude: Double = DEFAULT_MAP_LONGITUDE,
+    val hasLocationSelection: Boolean = false,
+    val errorMessage: String? = null,
+    val zoom: Float = DEFAULT_MAP_ZOOM
+)
+
+private data class LocationEditorState(
+    val isVisible: Boolean = false,
+    val labelInput: String = "",
+    val latitudeInput: String = "",
+    val longitudeInput: String = "",
+    val errorMessage: String? = null
+)
+
 private data class WeatherRefreshStatus(
     val isRefreshing: Boolean = false,
     val lastUpdated: Instant? = null,
     val errorMessage: UiMessage? = null
+)
+
+private fun LocationSearchState.toUiState(): LocationSearchUiState = LocationSearchUiState(
+    isVisible = isVisible,
+    query = query,
+    isSearching = isLoading,
+    results = results.mapIndexed { index, result ->
+        LocationSearchResultUiState(
+            id = index.toString(),
+            title = result.title,
+            subtitle = result.subtitle
+        )
+    },
+    errorMessage = errorMessage
+)
+
+private fun MapPickerState.toUiState(): MapPickerUiState = MapPickerUiState(
+    isVisible = isVisible,
+    labelInput = labelInput,
+    latitude = latitude,
+    longitude = longitude,
+    hasLocationSelection = hasLocationSelection,
+    errorMessage = errorMessage,
+    isConfirmEnabled = labelInput.isNotBlank() && hasLocationSelection,
+    zoom = zoom
 )
 
 @androidx.annotation.StringRes

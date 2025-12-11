@@ -22,26 +22,33 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 class OpenMeteoWeatherRepository(
-    private val coordinates: Coordinates,
+    coordinates: Coordinates,
     initialSnapshot: WeatherSnapshot,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) : WeatherRepository {
 
     private val state = MutableStateFlow(initialSnapshot)
+    private val coordinatesState = MutableStateFlow(coordinates)
 
     override fun observeCurrentWeather(): Flow<WeatherSnapshot> = state
 
     override suspend fun refresh() {
         try {
-            val snapshot = fetchSnapshot()
+            val snapshot = fetchSnapshot(coordinatesState.value)
             state.value = snapshot
         } catch (t: Throwable) {
             Log.w(TAG, "Failed to fetch weather", t)
         }
     }
 
-    private suspend fun fetchSnapshot(): WeatherSnapshot = withContext(ioDispatcher) {
-        val url = buildUrl()
+    fun updateCoordinates(newCoordinates: Coordinates) {
+        if (coordinatesState.value != newCoordinates) {
+            coordinatesState.value = newCoordinates
+        }
+    }
+
+    private suspend fun fetchSnapshot(coordinates: Coordinates): WeatherSnapshot = withContext(ioDispatcher) {
+        val url = buildUrl(coordinates)
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = TIMEOUT_MILLIS
@@ -61,7 +68,7 @@ class OpenMeteoWeatherRepository(
         }
     }
 
-    private fun buildUrl(): String {
+    private fun buildUrl(coordinates: Coordinates): String {
         return "https://api.open-meteo.com/v1/forecast" +
             "?latitude=${coordinates.latitude}" +
             "&longitude=${coordinates.longitude}" +

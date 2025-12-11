@@ -5,6 +5,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Checkroom
 import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.outlined.LocalLaundryService
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.example.myapplication.R
 
@@ -30,5 +31,10 @@ enum class AppDestination(
         route = "laundry",
         labelRes = R.string.navigation_laundry,
         icon = Icons.Outlined.LocalLaundryService
+    ),
+    Settings(
+        route = "settings",
+        labelRes = R.string.navigation_settings,
+        icon = Icons.Outlined.Settings
     );
 }

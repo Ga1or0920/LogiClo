@@ -25,6 +25,7 @@ import com.example.myapplication.ui.navigation.AppDestination
 import com.example.myapplication.ui.navigation.rememberLaundryLoopAppState
 import com.example.myapplication.ui.providers.ProvideAppContainer
 import com.example.myapplication.ui.providers.rememberAppContainer
+import com.example.myapplication.ui.settings.SettingsRoute
 
 /**
  * アプリ全体のナビゲーションと共通 UI フレームを司るコンポーザブル。
@@ -83,6 +84,9 @@ fun LaundryLoopApp() {
                 }
                 composable(AppDestination.Laundry.route) {
                     LaundryScreen()
+                }
+                composable(AppDestination.Settings.route) {
+                    SettingsRoute(navController)
                 }
                 composable(
                     route = ClosetDestinations.EditItem,

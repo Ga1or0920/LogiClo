@@ -1,56 +1,59 @@
 package com.example.myapplication.ui.dashboard
 
-import android.content.Context
+import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.Context
+import android.content.pm.PackageManager
 import android.os.Build
+import androidx.annotation.StringRes
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.annotation.StringRes
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.Home
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Icon
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarDefaults
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -58,51 +61,65 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.graphics.vector.ImageVector
-import com.example.myapplication.util.time.InstantCompat
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.myapplication.R
 import com.example.myapplication.data.InMemoryAppContainer
 import com.example.myapplication.data.sample.SampleData
-import com.example.myapplication.domain.model.ClothingItem
 import com.example.myapplication.domain.model.CasualForecastDay
 import com.example.myapplication.domain.model.CasualForecastSegment
-import com.example.myapplication.domain.model.EnvironmentMode
+import com.example.myapplication.domain.model.ClothingItem
 import com.example.myapplication.domain.model.ColorGroup
+import com.example.myapplication.domain.model.EnvironmentMode
+import com.example.myapplication.ui.dashboard.model.OutfitSuggestion
 import com.example.myapplication.domain.model.TpoMode
 import com.example.myapplication.domain.model.WeatherSnapshot
-import com.example.myapplication.ui.common.UiMessageArg
-import com.example.myapplication.ui.common.labelResId
-import com.example.myapplication.ui.components.ClothingIllustrationSwatch
-import com.example.myapplication.ui.common.UiMessage
 import com.example.myapplication.ui.closet.closetColorOptions
+import com.example.myapplication.ui.common.UiMessage
+import com.example.myapplication.ui.common.UiMessageArg
+import com.example.myapplication.ui.common.formatWeatherTimestamp
+import com.example.myapplication.ui.common.labelResId
+import com.example.myapplication.ui.common.resolve
+import com.example.myapplication.ui.components.ClothingIllustrationSwatch
+import com.example.myapplication.ui.dashboard.DashboardViewModel
 import com.example.myapplication.ui.dashboard.model.AlertSeverity
-import com.example.myapplication.ui.dashboard.model.DashboardUiState
-import com.example.myapplication.ui.dashboard.model.InventoryAlert
-import com.example.myapplication.ui.dashboard.model.OutfitSuggestion
-import com.example.myapplication.ui.dashboard.model.ClockDebugUiState
 import com.example.myapplication.ui.dashboard.model.CasualForecastSegmentOption
 import com.example.myapplication.ui.dashboard.model.CasualForecastSummary
 import com.example.myapplication.ui.dashboard.model.CasualForecastUiState
-import com.example.myapplication.ui.dashboard.model.WeatherDebugUiState
+import com.example.myapplication.ui.dashboard.model.DashboardUiState
+import com.example.myapplication.ui.dashboard.model.InventoryAlert
+import com.example.myapplication.ui.dashboard.model.LocationSearchResultUiState
+import com.example.myapplication.ui.dashboard.model.LocationSearchUiState
+import com.example.myapplication.ui.dashboard.model.MapPickerUiState
 import com.example.myapplication.ui.dashboard.model.WearFeedbackDebugUiState
+import com.example.myapplication.ui.dashboard.model.WeatherDebugUiState
+import com.example.myapplication.ui.dashboard.model.ClockDebugUiState
+import com.example.myapplication.ui.dashboard.model.WeatherLocationUiState
 import com.example.myapplication.ui.providers.LocalAppContainer
 import com.example.myapplication.ui.theme.MyApplicationTheme
+import com.example.myapplication.util.time.InstantCompat
+import com.google.android.gms.common.ConnectionResult
+import com.google.android.gms.common.GoogleApiAvailability
+import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.GoogleMap
+import com.google.android.gms.maps.MapView
+import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.Marker
+import com.google.android.gms.maps.model.MarkerOptions
 import java.time.Instant
-import java.time.ZoneId
-import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.Locale
-import androidx.core.app.NotificationCompat
-import androidx.core.app.NotificationManagerCompat
-import androidx.core.content.ContextCompat
-import android.Manifest
-import android.content.pm.PackageManager
 
 @Composable
 fun DashboardScreen(modifier: Modifier = Modifier) {
@@ -116,11 +133,16 @@ fun DashboardScreen(modifier: Modifier = Modifier) {
             wearFeedbackRepository = appContainer.wearFeedbackRepository,
             weatherDebugController = appContainer.weatherDebugController,
             clockDebugController = appContainer.clockDebugController,
+            locationSearchRepository = appContainer.locationSearchRepository,
             stringResolver = context::getString
         )
     )
 
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val isMapSupported = remember(context) {
+        GoogleApiAvailability.getInstance()
+            .isGooglePlayServicesAvailable(context) == ConnectionResult.SUCCESS
+    }
 
     LaunchedEffect(viewModel) {
         ensureWearNotificationChannel(context)
@@ -141,16 +163,21 @@ fun DashboardScreen(modifier: Modifier = Modifier) {
         onRefreshWeather = viewModel::refreshWeather,
         onCasualDaySelected = viewModel::onCasualForecastDaySelected,
         onCasualSegmentSelected = viewModel::onCasualForecastSegmentSelected,
-        onClockDebugNextDayChanged = viewModel::onClockDebugNextDayChanged,
-        onDebugMinTempChanged = viewModel::onDebugMinTemperatureChanged,
-        onDebugMaxTempChanged = viewModel::onDebugMaxTemperatureChanged,
-        onDebugHumidityChanged = viewModel::onDebugHumidityChanged,
-        onApplyWeatherDebug = viewModel::applyWeatherDebugOverride,
-        onClearWeatherDebug = viewModel::clearWeatherDebugOverride,
-        onClockDebugManualInputChanged = viewModel::onClockDebugManualOverrideInputChanged,
-        onApplyClockDebugManualOverride = viewModel::applyClockDebugManualOverride,
-        onClearClockDebugManualOverride = viewModel::clearClockDebugManualOverride,
+        onWeatherLocationDialogDismissed = viewModel::onWeatherLocationDialogDismissed,
+        onWeatherLocationLabelChanged = viewModel::onWeatherLocationLabelChanged,
+        onWeatherLocationLatitudeChanged = viewModel::onWeatherLocationLatitudeChanged,
+        onWeatherLocationLongitudeChanged = viewModel::onWeatherLocationLongitudeChanged,
+        onUseDeviceLocation = viewModel::onUseDeviceLocationSelected,
+        onApplyWeatherLocationOverride = viewModel::onApplyWeatherLocationOverride,
+        onLocationSearchDismissed = viewModel::onLocationSearchDismissed,
+        onLocationSearchQueryChanged = viewModel::onLocationSearchQueryChanged,
+        onLocationSearchResultSelected = viewModel::onLocationSearchResultSelected,
+        onMapPickerDismissed = viewModel::onMapPickerDismissed,
+        onMapPickerLabelChanged = viewModel::onMapPickerLabelChanged,
+        onMapPickerCoordinateChanged = viewModel::onMapPickerLocationChanged,
+        onMapPickerConfirm = viewModel::onMapPickerConfirmed,
         onDismissComebackDialog = viewModel::onComebackDialogDismissed,
+        isMapSupported = isMapSupported,
         modifier = modifier
     )
 }
@@ -168,65 +195,68 @@ private fun DashboardContent(
     onRefreshWeather: () -> Unit,
     onCasualDaySelected: (CasualForecastDay) -> Unit,
     onCasualSegmentSelected: (CasualForecastSegment) -> Unit,
-    onClockDebugNextDayChanged: (Boolean) -> Unit,
-    onClockDebugManualInputChanged: (String) -> Unit,
-    onApplyClockDebugManualOverride: () -> Unit,
-    onClearClockDebugManualOverride: () -> Unit,
+    onWeatherLocationDialogDismissed: () -> Unit,
+    onWeatherLocationLabelChanged: (String) -> Unit,
+    onWeatherLocationLatitudeChanged: (String) -> Unit,
+    onWeatherLocationLongitudeChanged: (String) -> Unit,
+    onUseDeviceLocation: () -> Unit,
+    onApplyWeatherLocationOverride: () -> Unit,
+    onLocationSearchDismissed: () -> Unit,
+    onLocationSearchQueryChanged: (String) -> Unit,
+    onLocationSearchResultSelected: (String) -> Unit,
+    onMapPickerDismissed: () -> Unit,
+    onMapPickerLabelChanged: (String) -> Unit,
+    onMapPickerCoordinateChanged: (Double, Double) -> Unit,
+    onMapPickerConfirm: () -> Unit,
     onDismissComebackDialog: () -> Unit,
-    onDebugMinTempChanged: (String) -> Unit,
-    onDebugMaxTempChanged: (String) -> Unit,
-    onDebugHumidityChanged: (String) -> Unit,
-    onApplyWeatherDebug: () -> Unit,
-    onClearWeatherDebug: () -> Unit,
+    isMapSupported: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val tabs = DashboardTab.entries
-    var selectedTabIndex by rememberSaveable { mutableIntStateOf(DashboardTab.OVERVIEW.ordinal) }
-    val selectedTab = tabs[selectedTabIndex]
+    var isMainMenuVisible by rememberSaveable { mutableStateOf(false) }
+    var mainMenuDestination by rememberSaveable { mutableStateOf("") }
+    var isWearConfirmVisible by rememberSaveable { mutableStateOf(false) }
 
-    Column(modifier = modifier.fillMaxSize()) {
-        Box(
+    Box(modifier = modifier.fillMaxSize()) {
+        OverviewTabContent(
+            state = state,
+            onSuggestionSelected = onSuggestionSelected,
+            onWearClicked = { isWearConfirmVisible = true },
+            onRerollSuggestion = onRerollSuggestion,
+            onReviewInventory = onReviewInventory,
+            onRefreshWeather = onRefreshWeather,
+            onCasualDaySelected = onCasualDaySelected,
+            onCasualSegmentSelected = onCasualSegmentSelected,
+            modifier = Modifier.fillMaxSize()
+        )
+
+        MainMenuButton(
+            onClick = { isMainMenuVisible = true },
+            isActive = isMainMenuVisible,
             modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-        ) {
-            when (selectedTab) {
-                DashboardTab.OVERVIEW -> OverviewTabContent(
-                    state = state,
-                    onModeSelected = onModeSelected,
-                    onEnvironmentSelected = onEnvironmentSelected,
-                    onSuggestionSelected = onSuggestionSelected,
-                    onWearClicked = onWearClicked,
-                    onRerollSuggestion = onRerollSuggestion,
-                    onReviewInventory = onReviewInventory,
-                    onRefreshWeather = onRefreshWeather,
-                    onCasualDaySelected = onCasualDaySelected,
-                    onCasualSegmentSelected = onCasualSegmentSelected,
-                    modifier = Modifier.fillMaxSize()
-                )
+                .align(Alignment.TopEnd)
+                .padding(top = 16.dp, end = 16.dp)
+        )
 
-                DashboardTab.DEBUG -> DebugTabContent(
-                    weatherDebug = state.weatherDebug,
-                    clockDebug = state.clockDebug,
-                    wearFeedbackDebug = state.wearFeedbackDebug,
-                    onClockDebugNextDayChanged = onClockDebugNextDayChanged,
-                    onClockDebugManualInputChanged = onClockDebugManualInputChanged,
-                    onApplyClockDebugManualOverride = onApplyClockDebugManualOverride,
-                    onClearClockDebugManualOverride = onClearClockDebugManualOverride,
-                    onDebugMinTempChanged = onDebugMinTempChanged,
-                    onDebugMaxTempChanged = onDebugMaxTempChanged,
-                    onDebugHumidityChanged = onDebugHumidityChanged,
-                    onApplyWeatherDebug = onApplyWeatherDebug,
-                    onClearWeatherDebug = onClearWeatherDebug,
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
+        if (isMainMenuVisible) {
+            MainMenuDialog(
+                currentMode = state.mode,
+                currentEnvironment = state.environment,
+                destination = mainMenuDestination,
+                onModeSelected = onModeSelected,
+                onEnvironmentSelected = onEnvironmentSelected,
+                onDestinationChanged = { mainMenuDestination = it },
+                onDismiss = { isMainMenuVisible = false }
+            )
         }
+    }
 
-        DashboardTabSelector(
-            tabs = tabs,
-            selectedTab = selectedTab,
-            onTabSelected = { selectedTabIndex = it.ordinal }
+    if (isWearConfirmVisible) {
+        WearConfirmDialog(
+            onConfirm = {
+                isWearConfirmVisible = false
+                onWearClicked()
+            },
+            onDismiss = { isWearConfirmVisible = false }
         )
     }
 
@@ -244,13 +274,42 @@ private fun DashboardContent(
             onDismiss = onDismissComebackDialog
         )
     }
+
+    if (state.weatherLocation.isDialogVisible) {
+        WeatherLocationDialog(
+            state = state.weatherLocation,
+            onDismiss = onWeatherLocationDialogDismissed,
+            onLabelChanged = onWeatherLocationLabelChanged,
+            onLatitudeChanged = onWeatherLocationLatitudeChanged,
+            onLongitudeChanged = onWeatherLocationLongitudeChanged,
+            onUseDeviceLocation = onUseDeviceLocation,
+            onApply = onApplyWeatherLocationOverride
+        )
+    }
+
+    if (state.locationSearch.isVisible) {
+        LocationSearchDialog(
+            state = state.locationSearch,
+            onDismiss = onLocationSearchDismissed,
+            onQueryChanged = onLocationSearchQueryChanged,
+            onResultSelected = onLocationSearchResultSelected
+        )
+    }
+
+    if (isMapSupported && state.mapPicker.isVisible) {
+        MapPickerDialog(
+            state = state.mapPicker,
+            onDismiss = onMapPickerDismissed,
+            onLabelChanged = onMapPickerLabelChanged,
+            onConfirm = onMapPickerConfirm,
+            onPositionChanged = onMapPickerCoordinateChanged
+        )
+    }
 }
 
 @Composable
 private fun OverviewTabContent(
     state: DashboardUiState,
-    onModeSelected: (TpoMode) -> Unit,
-    onEnvironmentSelected: (EnvironmentMode) -> Unit,
     onSuggestionSelected: (OutfitSuggestion) -> Unit,
     onWearClicked: () -> Unit,
     onRerollSuggestion: () -> Unit,
@@ -269,20 +328,6 @@ private fun OverviewTabContent(
             Text(
                 text = stringResource(id = R.string.dashboard_title),
                 style = MaterialTheme.typography.titleLarge
-            )
-        }
-
-        item {
-            ModeSwitcher(
-                currentMode = state.mode,
-                onModeSelected = onModeSelected
-            )
-        }
-
-        item {
-            EnvironmentSwitcher(
-                currentEnvironment = state.environment,
-                onEnvironmentSelected = onEnvironmentSelected
             )
         }
 
@@ -353,6 +398,15 @@ private fun OverviewTabContent(
             }
         }
 
+        item {
+            ActionButtons(
+                onRerollSuggestion = onRerollSuggestion,
+                onWearClicked = onWearClicked,
+                isRerollEnabled = state.totalSuggestionCount > 1,
+                isWearEnabled = state.selectedSuggestion != null
+            )
+        }
+
         if (state.inventoryReviewMessages.isNotEmpty()) {
             item {
                 OutlinedButton(
@@ -363,17 +417,218 @@ private fun OverviewTabContent(
                 }
             }
         }
-
-        item {
-            ActionButtons(
-                onRerollSuggestion = onRerollSuggestion,
-                onWearClicked = onWearClicked,
-                isRerollEnabled = state.totalSuggestionCount > 1,
-                isWearEnabled = state.selectedSuggestion != null
-            )
-        }
     }
 }
+
+    @Composable
+    private fun MainMenuDialog(
+        currentMode: TpoMode,
+        currentEnvironment: EnvironmentMode,
+        destination: String,
+        onModeSelected: (TpoMode) -> Unit,
+        onEnvironmentSelected: (EnvironmentMode) -> Unit,
+        onDestinationChanged: (String) -> Unit,
+        onDismiss: () -> Unit
+    ) {
+        Dialog(
+            onDismissRequest = onDismiss,
+            properties = DialogProperties(
+                dismissOnBackPress = true,
+                dismissOnClickOutside = true,
+                usePlatformDefaultWidth = false
+            )
+        ) {
+            val scrimColor = MaterialTheme.colorScheme.scrim.copy(alpha = 0.6f)
+            val dismissInteraction = remember { MutableInteractionSource() }
+            Box(modifier = Modifier.fillMaxSize()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(scrimColor)
+                        .clickable(
+                            interactionSource = dismissInteraction,
+                            indication = null,
+                            onClick = onDismiss
+                        )
+                )
+
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .padding(horizontal = 24.dp)
+                        .widthIn(max = 420.dp),
+                    shape = RoundedCornerShape(24.dp),
+                    tonalElevation = 8.dp,
+                    shadowElevation = 12.dp
+                ) {
+                    MainMenuContent(
+                        currentMode = currentMode,
+                        currentEnvironment = currentEnvironment,
+                        destination = destination,
+                        onModeSelected = onModeSelected,
+                        onEnvironmentSelected = onEnvironmentSelected,
+                        onDestinationChanged = onDestinationChanged
+                    )
+                }
+
+                MainMenuButton(
+                    onClick = onDismiss,
+                    isActive = true,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 16.dp, end = 16.dp)
+                )
+            }
+        }
+    }
+
+    @Composable
+    private fun MainMenuContent(
+        currentMode: TpoMode,
+        currentEnvironment: EnvironmentMode,
+        destination: String,
+        onModeSelected: (TpoMode) -> Unit,
+        onEnvironmentSelected: (EnvironmentMode) -> Unit,
+        onDestinationChanged: (String) -> Unit,
+        modifier: Modifier = Modifier
+    ) {
+        Column(
+            modifier = modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(24.dp)
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = stringResource(id = R.string.dashboard_mode_selector_label),
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    MenuSelectionButton(
+                        label = stringResource(id = R.string.dashboard_mode_casual),
+                        selected = currentMode == TpoMode.CASUAL,
+                        onClick = { onModeSelected(TpoMode.CASUAL) }
+                    )
+                    MenuSelectionButton(
+                        label = stringResource(id = R.string.dashboard_mode_office),
+                        selected = currentMode == TpoMode.OFFICE,
+                        onClick = { onModeSelected(TpoMode.OFFICE) }
+                    )
+                }
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = stringResource(id = R.string.dashboard_environment_label),
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    MenuSelectionButton(
+                        label = stringResource(id = R.string.dashboard_environment_outdoor),
+                        selected = currentEnvironment == EnvironmentMode.OUTDOOR,
+                        onClick = { onEnvironmentSelected(EnvironmentMode.OUTDOOR) }
+                    )
+                    MenuSelectionButton(
+                        label = stringResource(id = R.string.main_menu_environment_indoor),
+                        selected = currentEnvironment == EnvironmentMode.INDOOR,
+                        onClick = { onEnvironmentSelected(EnvironmentMode.INDOOR) }
+                    )
+                }
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = stringResource(id = R.string.main_menu_destination_label),
+                    style = MaterialTheme.typography.titleMedium
+                )
+                OutlinedTextField(
+                    value = destination,
+                    onValueChange = onDestinationChanged,
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = {
+                        Text(text = stringResource(id = R.string.main_menu_destination_placeholder))
+                    }
+                )
+            }
+        }
+    }
+
+    @Composable
+    private fun RowScope.MenuSelectionButton(
+        label: String,
+        selected: Boolean,
+        onClick: () -> Unit
+    ) {
+        if (selected) {
+            Button(
+                onClick = onClick,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text(text = label)
+            }
+        } else {
+            OutlinedButton(
+                onClick = onClick,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text(text = label)
+            }
+        }
+    }
+
+    @Composable
+    private fun MainMenuButton(
+        onClick: () -> Unit,
+        modifier: Modifier = Modifier,
+        isActive: Boolean = false
+    ) {
+        val containerColor = if (isActive) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
+        }
+        val contentColor = if (isActive) {
+            MaterialTheme.colorScheme.onPrimary
+        } else {
+            MaterialTheme.colorScheme.onSurface
+        }
+        val buttonDescription = if (isActive) {
+            stringResource(id = R.string.main_menu_button_close_cd)
+        } else {
+            stringResource(id = R.string.main_menu_button_open_cd)
+        }
+
+        Surface(
+            modifier = modifier
+                .size(48.dp)
+                .semantics { contentDescription = buttonDescription },
+            shape = RoundedCornerShape(12.dp),
+            color = containerColor,
+            contentColor = contentColor,
+            tonalElevation = if (isActive) 6.dp else 2.dp,
+            shadowElevation = 6.dp,
+            onClick = onClick
+        ) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "三",
+                    style = MaterialTheme.typography.titleLarge
+                )
+            }
+        }
+    }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -441,110 +696,6 @@ private fun CasualForecastPlanner(
     }
 }
 
-@Composable
-private fun DebugTabContent(
-    weatherDebug: WeatherDebugUiState?,
-    clockDebug: ClockDebugUiState?,
-    wearFeedbackDebug: WearFeedbackDebugUiState?,
-    onClockDebugNextDayChanged: (Boolean) -> Unit,
-    onClockDebugManualInputChanged: (String) -> Unit,
-    onApplyClockDebugManualOverride: () -> Unit,
-    onClearClockDebugManualOverride: () -> Unit,
-    onDebugMinTempChanged: (String) -> Unit,
-    onDebugMaxTempChanged: (String) -> Unit,
-    onDebugHumidityChanged: (String) -> Unit,
-    onApplyWeatherDebug: () -> Unit,
-    onClearWeatherDebug: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    LazyColumn(
-        modifier = modifier,
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        if (weatherDebug == null && clockDebug == null && wearFeedbackDebug == null) {
-            item {
-                Text(
-                    text = stringResource(id = R.string.debug_tab_empty),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        } else {
-            weatherDebug?.let { debugState ->
-                item {
-                    WeatherDebugCard(
-                        state = debugState,
-                        onMinTempChanged = onDebugMinTempChanged,
-                        onMaxTempChanged = onDebugMaxTempChanged,
-                        onHumidityChanged = onDebugHumidityChanged,
-                        onApply = onApplyWeatherDebug,
-                        onClear = onClearWeatherDebug
-                    )
-                }
-            }
-
-            clockDebug?.let { clockState ->
-                item {
-                    ClockDebugCard(
-                        state = clockState,
-                        onToggleNextDay = onClockDebugNextDayChanged,
-                        onManualInputChanged = onClockDebugManualInputChanged,
-                        onApplyManualOverride = onApplyClockDebugManualOverride,
-                        onClearManualOverride = onClearClockDebugManualOverride
-                    )
-                }
-            }
-
-            wearFeedbackDebug?.let { feedbackState ->
-                item {
-                    WearFeedbackDebugCard(state = feedbackState)
-                }
-            }
-        }
-    }
-}
-
-private enum class DashboardTab(@param:StringRes val labelRes: Int, val icon: ImageVector) {
-    OVERVIEW(R.string.dashboard_tab_overview, Icons.Filled.Home),
-    DEBUG(R.string.dashboard_tab_debug, Icons.Filled.Build)
-}
-
-@Composable
-private fun DashboardTabSelector(
-    tabs: List<DashboardTab>,
-    selectedTab: DashboardTab,
-    onTabSelected: (DashboardTab) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    NavigationBar(
-        modifier = modifier.fillMaxWidth(),
-        containerColor = MaterialTheme.colorScheme.surface,
-        tonalElevation = 0.dp,
-        windowInsets = NavigationBarDefaults.windowInsets
-    ) {
-        tabs.forEach { tab ->
-            NavigationBarItem(
-                selected = selectedTab == tab,
-                onClick = { onTabSelected(tab) },
-                icon = {
-                    Icon(
-                        imageVector = tab.icon,
-                        contentDescription = stringResource(id = tab.labelRes)
-                    )
-                },
-                label = { Text(text = stringResource(id = tab.labelRes)) },
-                alwaysShowLabel = true,
-                colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = MaterialTheme.colorScheme.primary,
-                    selectedTextColor = MaterialTheme.colorScheme.primary,
-                    indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-                )
-            )
-        }
-    }
-}
-
 @StringRes
 private fun CasualForecastDay.labelResId(): Int = when (this) {
     CasualForecastDay.TODAY -> R.string.dashboard_casual_forecast_day_today
@@ -556,56 +707,6 @@ private fun CasualForecastSegment.labelResId(): Int = when (this) {
     CasualForecastSegment.MORNING -> R.string.dashboard_casual_forecast_segment_morning
     CasualForecastSegment.AFTERNOON -> R.string.dashboard_casual_forecast_segment_afternoon
     CasualForecastSegment.EVENING -> R.string.dashboard_casual_forecast_segment_evening
-}
-
-@Composable
-private fun ModeSwitcher(
-    currentMode: TpoMode,
-    onModeSelected: (TpoMode) -> Unit
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            text = stringResource(id = R.string.dashboard_mode_selector_label),
-            style = MaterialTheme.typography.titleSmall
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            FilterChip(
-                selected = currentMode == TpoMode.CASUAL,
-                onClick = { onModeSelected(TpoMode.CASUAL) },
-                label = { Text(stringResource(id = R.string.dashboard_mode_casual)) }
-            )
-            FilterChip(
-                selected = currentMode == TpoMode.OFFICE,
-                onClick = { onModeSelected(TpoMode.OFFICE) },
-                label = { Text(stringResource(id = R.string.dashboard_mode_office)) }
-            )
-        }
-    }
-}
-
-@Composable
-private fun EnvironmentSwitcher(
-    currentEnvironment: EnvironmentMode,
-    onEnvironmentSelected: (EnvironmentMode) -> Unit
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            text = stringResource(id = R.string.dashboard_environment_label),
-            style = MaterialTheme.typography.titleSmall
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            FilterChip(
-                selected = currentEnvironment == EnvironmentMode.OUTDOOR,
-                onClick = { onEnvironmentSelected(EnvironmentMode.OUTDOOR) },
-                label = { Text(stringResource(id = R.string.dashboard_environment_outdoor)) }
-            )
-            FilterChip(
-                selected = currentEnvironment == EnvironmentMode.INDOOR,
-                onClick = { onEnvironmentSelected(EnvironmentMode.INDOOR) },
-                label = { Text(stringResource(id = R.string.dashboard_environment_indoor)) }
-            )
-        }
-    }
 }
 
 @Composable
@@ -870,249 +971,326 @@ private fun WeatherCard(
 }
 
 @Composable
-private fun WeatherDebugCard(
-    state: WeatherDebugUiState,
-    onMinTempChanged: (String) -> Unit,
-    onMaxTempChanged: (String) -> Unit,
-    onHumidityChanged: (String) -> Unit,
-    onApply: () -> Unit,
-    onClear: () -> Unit
+private fun WeatherLocationDialog(
+    state: WeatherLocationUiState,
+    onDismiss: () -> Unit,
+    onLabelChanged: (String) -> Unit,
+    onLatitudeChanged: (String) -> Unit,
+    onLongitudeChanged: (String) -> Unit,
+    onUseDeviceLocation: () -> Unit,
+    onApply: () -> Unit
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text(
-                text = stringResource(id = R.string.debug_weather_title),
-                style = MaterialTheme.typography.titleMedium
-            )
-            OutlinedTextField(
-                value = state.minTemperatureInput,
-                onValueChange = onMinTempChanged,
-                label = { Text(stringResource(id = R.string.debug_weather_min_label)) },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                modifier = Modifier.fillMaxWidth()
-            )
-            OutlinedTextField(
-                value = state.maxTemperatureInput,
-                onValueChange = onMaxTempChanged,
-                label = { Text(stringResource(id = R.string.debug_weather_max_label)) },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                modifier = Modifier.fillMaxWidth()
-            )
-            OutlinedTextField(
-                value = state.humidityInput,
-                onValueChange = onHumidityChanged,
-                label = { Text(stringResource(id = R.string.debug_weather_humidity_label)) },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.fillMaxWidth()
-            )
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(text = stringResource(id = R.string.dashboard_weather_location_dialog_title))
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = state.labelInput,
+                    onValueChange = onLabelChanged,
+                    label = { Text(text = stringResource(id = R.string.dashboard_weather_location_dialog_label)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = state.latitudeInput,
+                    onValueChange = onLatitudeChanged,
+                    label = { Text(text = stringResource(id = R.string.dashboard_weather_location_dialog_latitude)) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = state.longitudeInput,
+                    onValueChange = onLongitudeChanged,
+                    label = { Text(text = stringResource(id = R.string.dashboard_weather_location_dialog_longitude)) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                state.errorMessage?.let { error ->
+                    Text(
+                        text = error,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+        },
+        confirmButton = {
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
+                TextButton(onClick = onUseDeviceLocation) {
+                    Text(text = stringResource(id = R.string.dashboard_weather_location_dialog_use_device))
+                }
                 Button(onClick = onApply) {
-                    Text(text = stringResource(id = R.string.debug_weather_apply))
-                }
-                OutlinedButton(
-                    onClick = onClear,
-                    enabled = state.isOverrideActive
-                ) {
-                    Text(text = stringResource(id = R.string.debug_weather_clear))
+                    Text(text = stringResource(id = R.string.dashboard_weather_location_dialog_save))
                 }
             }
-            if (state.isOverrideActive) {
-                Text(
-                    text = stringResource(id = R.string.debug_weather_active),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Text(
-                    text = stringResource(id = R.string.debug_weather_persistent_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            state.lastAppliedAt?.let { instant ->
-                val label = formatWeatherTimestamp(instant)
-                Text(
-                    text = stringResource(id = R.string.debug_weather_last_applied, label),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            state.errorMessage?.let { message ->
-                Text(
-                    text = message,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error
-                )
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = stringResource(id = R.string.common_cancel))
             }
         }
-    }
+    )
 }
 
 @Composable
-private fun ClockDebugCard(
-    state: ClockDebugUiState,
-    onToggleNextDay: (Boolean) -> Unit,
-    onManualInputChanged: (String) -> Unit,
-    onApplyManualOverride: () -> Unit,
-    onClearManualOverride: () -> Unit
+private fun LocationSearchDialog(
+    state: LocationSearchUiState,
+    onDismiss: () -> Unit,
+    onQueryChanged: (String) -> Unit,
+    onResultSelected: (String) -> Unit
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text(
-                text = stringResource(id = R.string.debug_clock_title),
-                style = MaterialTheme.typography.titleMedium
-            )
-            Row(
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(text = stringResource(id = R.string.dashboard_weather_location_search_dialog_title))
+        },
+        text = {
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Column {
+                OutlinedTextField(
+                    value = state.query,
+                    onValueChange = onQueryChanged,
+                    label = { Text(text = stringResource(id = R.string.dashboard_weather_location_search_label)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (state.isSearching) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
+                val instructionsNeeded = state.query.trim().length < LOCATION_SEARCH_MIN_QUERY_LENGTH
+                if (instructionsNeeded && !state.isSearching && state.errorMessage == null) {
                     Text(
-                        text = stringResource(id = R.string.debug_clock_next_day_label),
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Text(
-                        text = stringResource(id = R.string.debug_clock_hint),
+                        text = stringResource(id = R.string.dashboard_weather_location_search_instructions),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                Switch(
-                    checked = state.isNextDayEnabled,
-                    onCheckedChange = onToggleNextDay
-                )
+                state.errorMessage?.let { message ->
+                    Text(
+                        text = message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+                if (state.results.isNotEmpty()) {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 240.dp)
+                    ) {
+                        items(state.results, key = { it.id }) { result ->
+                            LocationSearchResultRow(
+                                result = result,
+                                onClick = { onResultSelected(result.id) }
+                            )
+                        }
+                    }
+                }
             }
-            if (state.isNextDayEnabled) {
-                Text(
-                    text = stringResource(id = R.string.debug_clock_active),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary
-                )
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = stringResource(id = R.string.dashboard_weather_location_search_close))
             }
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        }
+    )
+}
+
+@Composable
+@androidx.compose.ui.UiComposable
+private fun MapPickerDialog(
+    state: MapPickerUiState,
+    onDismiss: () -> Unit,
+    onLabelChanged: (String) -> Unit,
+    onConfirm: () -> Unit,
+    onPositionChanged: (Double, Double) -> Unit
+) {
+    val mapView = rememberMapView()
+    var googleMap by remember { mutableStateOf<GoogleMap?>(null) }
+    var marker by remember { mutableStateOf<Marker?>(null) }
+    var lastTarget by remember { mutableStateOf<LatLng?>(null) }
+    var lastZoom by remember { mutableStateOf<Float?>(null) }
+    val targetZoom = if (state.zoom > 0f) state.zoom else MAP_PICKER_DEFAULT_ZOOM
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            shape = MaterialTheme.shapes.extraLarge,
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
                 Text(
-                    text = stringResource(id = R.string.debug_clock_manual_label),
+                    text = stringResource(id = R.string.dashboard_weather_location_map_dialog_title),
+                    style = MaterialTheme.typography.headlineSmall
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(240.dp)
+                ) {
+                    AndroidView(
+                        modifier = Modifier.fillMaxSize(),
+                        factory = {
+                            mapView.apply {
+                                getMapAsync { map ->
+                                    googleMap = map.apply {
+                                        uiSettings.isZoomControlsEnabled = true
+                                        uiSettings.isMapToolbarEnabled = false
+                                        setOnMapClickListener { latLng ->
+                                            onPositionChanged(latLng.latitude, latLng.longitude)
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        update = {
+                            val map = googleMap ?: return@AndroidView
+                            val target = LatLng(state.latitude, state.longitude)
+                            val previous = lastTarget
+                            val previousZoom = lastZoom
+                            val cameraUpdate = when {
+                                previous == null || previousZoom == null ->
+                                    CameraUpdateFactory.newLatLngZoom(target, targetZoom)
+                                previousZoom != targetZoom ->
+                                    CameraUpdateFactory.newLatLngZoom(target, targetZoom)
+                                previous != target ->
+                                    CameraUpdateFactory.newLatLng(target)
+                                else -> null
+                            }
+                            cameraUpdate?.let { update ->
+                                if (previous == null) {
+                                    map.moveCamera(update)
+                                } else {
+                                    map.animateCamera(update)
+                                }
+                            }
+                            lastTarget = target
+                            lastZoom = targetZoom
+                            val currentMarker = marker
+                            if (state.hasLocationSelection) {
+                                if (currentMarker == null) {
+                                    marker = map.addMarker(MarkerOptions().position(target))
+                                } else {
+                                    currentMarker.position = target
+                                }
+                            } else {
+                                currentMarker?.remove()
+                                marker = null
+                            }
+                        }
+                    )
+                }
+                Text(
+                    text = stringResource(id = R.string.dashboard_weather_location_map_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = stringResource(
+                        id = R.string.dashboard_weather_location_coordinates,
+                        state.latitude,
+                        state.longitude
+                    ),
                     style = MaterialTheme.typography.bodyMedium
                 )
                 OutlinedTextField(
-                    value = state.manualOverrideInput,
-                    onValueChange = onManualInputChanged,
+                    value = state.labelInput,
+                    onValueChange = onLabelChanged,
+                    label = { Text(text = stringResource(id = R.string.dashboard_weather_location_map_label)) },
                     singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
-                    placeholder = {
-                        Text(text = stringResource(id = R.string.debug_clock_manual_placeholder))
-                    },
                     modifier = Modifier.fillMaxWidth()
                 )
-                Text(
-                    text = stringResource(id = R.string.debug_clock_manual_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Button(
-                        onClick = onApplyManualOverride,
-                        enabled = state.manualOverrideInput.isNotBlank()
-                    ) {
-                        Text(text = stringResource(id = R.string.debug_clock_manual_apply))
-                    }
-                    OutlinedButton(
-                        onClick = onClearManualOverride,
-                        enabled = state.isManualOverrideActive
-                    ) {
-                        Text(text = stringResource(id = R.string.debug_clock_manual_clear))
-                    }
-                }
-            }
-            if (state.isManualOverrideActive) {
-                val manualLabel = state.manualOverrideLabel ?: state.manualOverrideInput
-                if (manualLabel.isNotBlank()) {
+                state.errorMessage?.let { error ->
                     Text(
-                        text = stringResource(id = R.string.debug_clock_manual_active, manualLabel),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.primary
+                        text = error,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
                     )
                 }
-            }
-            state.lastAppliedAt?.let { instant ->
-                val label = formatWeatherTimestamp(instant)
-                Text(
-                    text = stringResource(id = R.string.debug_clock_last_applied, label),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            state.errorMessage?.let { message ->
-                Text(
-                    text = message,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = onDismiss) {
+                        Text(text = stringResource(id = R.string.common_cancel))
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Button(
+                        onClick = onConfirm,
+                        enabled = state.isConfirmEnabled
+                    ) {
+                        Text(text = stringResource(id = R.string.dashboard_weather_location_map_confirm))
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun WearFeedbackDebugCard(state: WearFeedbackDebugUiState) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+private fun LocationSearchResultRow(
+    result: LocationSearchResultUiState,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
+        Text(
+            text = result.title,
+            style = MaterialTheme.typography.bodyLarge,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        result.subtitle?.let { subtitle ->
             Text(
-                text = stringResource(id = R.string.debug_feedback_title),
-                style = MaterialTheme.typography.titleMedium
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
             )
-            state.lastUpdatedAt?.let { instant ->
-                Text(
-                    text = stringResource(id = R.string.debug_feedback_last_updated, formatWeatherTimestamp(instant)),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            if (state.messages.isEmpty()) {
-                Text(
-                    text = stringResource(id = R.string.debug_feedback_empty),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    state.messages.forEach { message ->
-                        Text(
-                            text = "• ${message.resolve()}",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                }
-            }
         }
     }
+}
+
+@Composable
+private fun rememberMapView(): MapView {
+    val context = LocalContext.current
+    val mapView = remember { MapView(context) }
+    DisposableEffect(mapView) {
+        mapView.onCreate(null)
+        mapView.onStart()
+        mapView.onResume()
+        onDispose {
+            mapView.onPause()
+            mapView.onStop()
+            mapView.onDestroy()
+        }
+    }
+    return mapView
 }
 
 @Composable
@@ -1290,6 +1468,32 @@ private fun SuggestionMeta(text: String) {
 }
 
 @Composable
+private fun WearConfirmDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(text = stringResource(id = R.string.dashboard_wear_confirm_title))
+        },
+        text = {
+            Text(text = stringResource(id = R.string.dashboard_wear_confirm_message))
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(text = stringResource(id = R.string.dashboard_wear_confirm_confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = stringResource(id = R.string.dashboard_wear_confirm_cancel))
+            }
+        }
+    )
+}
+
+@Composable
 private fun ActionButtons(
     onRerollSuggestion: () -> Unit,
     onWearClicked: () -> Unit,
@@ -1297,14 +1501,6 @@ private fun ActionButtons(
     isWearEnabled: Boolean
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        OutlinedButton(
-            onClick = onRerollSuggestion,
-            enabled = isRerollEnabled,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(text = stringResource(id = R.string.dashboard_button_reroll))
-        }
-
         Button(
             onClick = onWearClicked,
             enabled = isWearEnabled,
@@ -1312,23 +1508,15 @@ private fun ActionButtons(
         ) {
             Text(text = stringResource(id = R.string.dashboard_button_wear))
         }
-    }
-}
 
-private fun UiMessage.resolve(context: Context): String {
-    val resolvedArgs = args.map { arg ->
-        when (arg) {
-            is UiMessageArg.Raw -> arg.value
-            is UiMessageArg.Resource -> context.getString(arg.resId)
+        OutlinedButton(
+            onClick = onRerollSuggestion,
+            enabled = isRerollEnabled,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(text = stringResource(id = R.string.dashboard_button_reroll))
         }
-    }.toTypedArray()
-    return context.getString(resId, *resolvedArgs)
-}
-
-@Composable
-private fun UiMessage.resolve(): String {
-    val context = LocalContext.current
-    return resolve(context)
+    }
 }
 
 private const val WEAR_NOTIFICATION_CHANNEL_ID = "wear_notifications"
@@ -1389,6 +1577,9 @@ private fun showWearNotification(context: Context, messages: List<UiMessage>) {
 
     notificationManager.notify(WEAR_NOTIFICATION_ID, builder.build())
 }
+
+private const val MAP_PICKER_DEFAULT_ZOOM = 9.5f
+private const val LOCATION_SEARCH_MIN_QUERY_LENGTH = 2
 
 @Preview(showBackground = true)
 @Composable
@@ -1471,6 +1662,11 @@ private fun DashboardScreenPreview() {
                         )
                     ),
                     weather = SampleData.weather,
+                    weatherLocation = WeatherLocationUiState(
+                        displayLabel = "場所指定: 東京駅",
+                        description = "緯度 35.6810 / 経度 139.7670",
+                        isOverrideActive = true
+                    ),
                     selectedSuggestion = OutfitSuggestion(
                         top = SampleData.closetItems[0],
                         bottom = SampleData.closetItems[1],
@@ -1509,28 +1705,22 @@ private fun DashboardScreenPreview() {
                 onRefreshWeather = {},
                 onCasualDaySelected = {},
                 onCasualSegmentSelected = {},
-                onClockDebugNextDayChanged = {},
-                onClockDebugManualInputChanged = {},
-                onApplyClockDebugManualOverride = {},
-                onClearClockDebugManualOverride = {},
+                onWeatherLocationDialogDismissed = {},
+                onWeatherLocationLabelChanged = {},
+                onWeatherLocationLatitudeChanged = {},
+                onWeatherLocationLongitudeChanged = {},
+                onUseDeviceLocation = {},
+                onApplyWeatherLocationOverride = {},
+                onLocationSearchDismissed = {},
+                onLocationSearchQueryChanged = {},
+                onLocationSearchResultSelected = {},
+                onMapPickerDismissed = {},
+                onMapPickerLabelChanged = {},
+                onMapPickerCoordinateChanged = { _, _ -> },
+                onMapPickerConfirm = {},
                 onDismissComebackDialog = {},
-                onDebugMinTempChanged = {},
-                onDebugMaxTempChanged = {},
-                onDebugHumidityChanged = {},
-                onApplyWeatherDebug = {},
-                onClearWeatherDebug = {}
+                isMapSupported = true
             )
         }
-    }
-}
-private fun formatWeatherTimestamp(instant: Instant): String {
-    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        java.time.format.DateTimeFormatter.ofPattern("M/d HH:mm")
-            .withZone(ZoneId.systemDefault())
-            .format(instant)
-    } else {
-        val epochMillis = InstantCompat.toEpochMilliOrNull(instant)
-            ?: return SimpleDateFormat("M/d HH:mm", Locale.getDefault()).format(Date())
-        SimpleDateFormat("M/d HH:mm", Locale.getDefault()).format(Date(epochMillis))
     }
 }

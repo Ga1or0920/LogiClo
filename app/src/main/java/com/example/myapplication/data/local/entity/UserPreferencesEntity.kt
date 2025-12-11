@@ -8,6 +8,7 @@ import com.example.myapplication.domain.model.EnvironmentMode
 import com.example.myapplication.domain.model.ClothingCategory
 import com.example.myapplication.domain.model.TpoMode
 import com.example.myapplication.domain.model.UserPreferences
+import com.example.myapplication.domain.model.WeatherLocationOverride
 import com.example.myapplication.util.time.InstantCompat
 import java.time.Instant
 
@@ -19,7 +20,10 @@ data class UserPreferencesEntity(
     @ColumnInfo(defaultValue = "outdoor") val lastSelectedEnvironment: String,
     val allowBlackNavy: Boolean,
     val disallowVividPair: Boolean,
-    @ColumnInfo(defaultValue = "{}") val defaultMaxWearsJson: String
+    @ColumnInfo(defaultValue = "{}") val defaultMaxWearsJson: String,
+    val weatherLocationLabel: String? = null,
+    val weatherLocationLatitude: Double? = null,
+    val weatherLocationLongitude: Double? = null
 ) {
     companion object {
         const val SINGLETON_ID: Int = 0
@@ -35,7 +39,12 @@ fun UserPreferencesEntity.toDomain(): UserPreferences = UserPreferences(
         allowBlackNavy = allowBlackNavy,
         disallowVividPair = disallowVividPair
     ),
-    defaultMaxWears = parseDefaultMaxWears(defaultMaxWearsJson)
+    defaultMaxWears = parseDefaultMaxWears(defaultMaxWearsJson),
+    weatherLocationOverride = buildWeatherLocationOverride(
+        label = weatherLocationLabel,
+        latitude = weatherLocationLatitude,
+        longitude = weatherLocationLongitude
+    )
 )
 
 fun UserPreferences.toEntity(): UserPreferencesEntity = UserPreferencesEntity(
@@ -44,7 +53,10 @@ fun UserPreferences.toEntity(): UserPreferencesEntity = UserPreferencesEntity(
     lastSelectedEnvironment = lastSelectedEnvironment.backendValue,
     allowBlackNavy = colorRules.allowBlackNavy,
     disallowVividPair = colorRules.disallowVividPair,
-    defaultMaxWearsJson = encodeDefaultMaxWears(defaultMaxWears)
+    defaultMaxWearsJson = encodeDefaultMaxWears(defaultMaxWears),
+    weatherLocationLabel = weatherLocationOverride?.label,
+    weatherLocationLatitude = weatherLocationOverride?.latitude,
+    weatherLocationLongitude = weatherLocationOverride?.longitude
 )
 
 private fun parseDefaultMaxWears(raw: String?): Map<ClothingCategory, Int> {
@@ -65,6 +77,21 @@ private fun encodeDefaultMaxWears(values: Map<ClothingCategory, Int>): String {
     return values.entries.joinToString(separator = ENTRY_DELIMITER) { (category, max) ->
         "${category.backendValue}$KEY_VALUE_DELIMITER$max"
     }
+}
+
+private fun buildWeatherLocationOverride(
+    label: String?,
+    latitude: Double?,
+    longitude: Double?
+): WeatherLocationOverride? {
+    val normalizedLabel = label?.takeIf { it.isNotBlank() } ?: return null
+    val lat = latitude ?: return null
+    val lon = longitude ?: return null
+    return WeatherLocationOverride(
+        label = normalizedLabel,
+        latitude = lat,
+        longitude = lon
+    )
 }
 
 private const val ENTRY_DELIMITER = ";"
