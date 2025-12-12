@@ -36,4 +36,14 @@ class RoomUserPreferencesRepository(
         val updated = current.copy(lastSelectedEnvironment = mode)
         userPreferencesDao.upsert(updated.toEntity())
     }
+
+    override suspend fun getEmailForSignIn(): String? {
+        return userPreferencesDao.get()?.emailForSignIn
+    }
+
+    override suspend fun setEmailForSignIn(email: String) {
+        val current = userPreferencesDao.get()?.toDomain() ?: UserPreferences()
+        val updated = current.copy(emailForSignIn = email)
+        userPreferencesDao.upsert(updated.toEntity())
+    }
 }

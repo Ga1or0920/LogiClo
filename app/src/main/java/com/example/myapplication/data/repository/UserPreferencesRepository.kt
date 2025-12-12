@@ -11,4 +11,6 @@ interface UserPreferencesRepository {
     suspend fun update(transform: (UserPreferences) -> UserPreferences)
     suspend fun updateLastSelectedMode(mode: TpoMode)
     suspend fun updateLastSelectedEnvironment(mode: EnvironmentMode)
+    suspend fun getEmailForSignIn(): String?
+    suspend fun setEmailForSignIn(email: String)
 }

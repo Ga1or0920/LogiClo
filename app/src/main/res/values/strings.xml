@@ -222,6 +222,7 @@
     <string name="debug_feedback_title">デバッグ: 着用フィードバック</string>
     <string name="settings_debug_section_title">デバッグ</string>
         <string name="settings_section_account">アカウント</string>
+        <string name="settings_login">ログイン</string>
         <string name="settings_login_google">Googleでログイン</string>
         <string name="settings_login_yahoo">Yahoo!でログイン</string>
         <string name="settings_account_username_label">ユーザー名またはメールアドレス</string>

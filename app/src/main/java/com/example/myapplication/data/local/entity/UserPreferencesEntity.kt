@@ -23,7 +23,8 @@ data class UserPreferencesEntity(
     @ColumnInfo(defaultValue = "{}") val defaultMaxWearsJson: String,
     val weatherLocationLabel: String? = null,
     val weatherLocationLatitude: Double? = null,
-    val weatherLocationLongitude: Double? = null
+    val weatherLocationLongitude: Double? = null,
+    val emailForSignIn: String? = null
 ) {
     companion object {
         const val SINGLETON_ID: Int = 0
@@ -44,7 +45,8 @@ fun UserPreferencesEntity.toDomain(): UserPreferences = UserPreferences(
         label = weatherLocationLabel,
         latitude = weatherLocationLatitude,
         longitude = weatherLocationLongitude
-    )
+    ),
+    emailForSignIn = emailForSignIn
 )
 
 fun UserPreferences.toEntity(): UserPreferencesEntity = UserPreferencesEntity(
@@ -56,7 +58,8 @@ fun UserPreferences.toEntity(): UserPreferencesEntity = UserPreferencesEntity(
     defaultMaxWearsJson = encodeDefaultMaxWears(defaultMaxWears),
     weatherLocationLabel = weatherLocationOverride?.label,
     weatherLocationLatitude = weatherLocationOverride?.latitude,
-    weatherLocationLongitude = weatherLocationOverride?.longitude
+    weatherLocationLongitude = weatherLocationOverride?.longitude,
+    emailForSignIn = emailForSignIn
 )
 
 private fun parseDefaultMaxWears(raw: String?): Map<ClothingCategory, Int> {

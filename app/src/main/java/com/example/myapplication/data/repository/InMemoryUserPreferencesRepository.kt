@@ -30,4 +30,12 @@ class InMemoryUserPreferencesRepository(
     override suspend fun updateLastSelectedEnvironment(mode: EnvironmentMode) {
         state.update { current -> current.copy(lastSelectedEnvironment = mode) }
     }
+
+    override suspend fun getEmailForSignIn(): String? {
+        return state.value.emailForSignIn
+    }
+
+    override suspend fun setEmailForSignIn(email: String) {
+        state.update { it.copy(emailForSignIn = email) }
+    }
 }

@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "850471868750",
+    "project_id": "logiclo-kobedenshi",
+    "storage_bucket": "logiclo-kobedenshi.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:850471868750:android:859919b3c56b880d6a261f",
+        "android_client_info": {
+          "package_name": "com.example.myapplication"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "850471868750-j3m43ha5iappfcp945p584jgb084616c.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA3Kvx_CWMIgj3FrAJiOBitfXhHuLoEM84"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "850471868750-j3m43ha5iappfcp945p584jgb084616c.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
