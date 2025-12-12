@@ -13,6 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import kotlin.math.min
+import kotlin.collections.LinkedHashSet
 
 class GeocoderLocationSearchRepository(
     context: Context,
@@ -67,7 +68,7 @@ class GeocoderLocationSearchRepository(
     }
 
     private fun searchWithRemote(query: String, maxResults: Int): List<LocationSearchResult> {
-        val language = locale.language.takeIf { it.isNotBlank() } ?: "en"
+        val language = resolvePreferredLanguage(query)
         val encodedName = URLEncoder.encode(query, StandardCharsets.UTF_8.name())
         val url = "https://geocoding-api.open-meteo.com/v1/search" +
             "?name=$encodedName" +
@@ -110,7 +111,7 @@ class GeocoderLocationSearchRepository(
             val latitude = item.optDouble("latitude", Double.NaN)
             val longitude = item.optDouble("longitude", Double.NaN)
             if (!latitude.isFinite() || !longitude.isFinite()) continue
-            val title = item.optString("name").takeIf { it.isNotBlank() } ?: query
+            val title = resolveDisplayTitle(item, query)
             val subtitle = buildRemoteSubtitle(item)
             results += LocationSearchResult(
                 title = title,
@@ -139,12 +140,58 @@ class GeocoderLocationSearchRepository(
     }
 
     private fun buildRemoteSubtitle(json: JSONObject): String? {
-        val admin1 = json.optString("admin1").takeIf { it.isNotBlank() }
+        val admin3 = json.optString("admin3").takeIf { it.isNotBlank() }
         val admin2 = json.optString("admin2").takeIf { it.isNotBlank() }
+        val admin1 = json.optString("admin1").takeIf { it.isNotBlank() }
         val country = json.optString("country").takeIf { it.isNotBlank() }
-        val parts = listOfNotNull(admin2, admin1, country)
+        val parts = listOfNotNull(admin3, admin2, admin1, country)
         return if (parts.isEmpty()) null else parts.joinToString(separator = " ")
+    }
+
+    private fun resolvePreferredLanguage(query: String): String {
+        if (query.hasJapaneseCharacters()) {
+            return "ja"
+        }
+        val language = locale.language.takeIf { it.isNotBlank() } ?: "en"
+        return language
+    }
+
+    private fun resolveDisplayTitle(item: JSONObject, fallback: String): String {
+        val localNames = item.optJSONObject("local_names")
+        val localeKey = locale.language.takeIf { it.isNotBlank() }
+        val nameKeys = LinkedHashSet<String>().apply {
+            if (fallback.hasJapaneseCharacters()) add("ja")
+            localeKey?.let { key -> add(key) }
+            add("ja")
+            add("en")
+        }
+        val candidates = buildList {
+            nameKeys.forEach { key ->
+                val value = localNames?.optString(key)
+                if (!value.isNullOrBlank()) add(value)
+            }
+            item.optString("name").takeIf { it.isNotBlank() }?.let(::add)
+            add(fallback)
+        }
+        return candidates.firstOrNull { !it.isNullOrBlank() && !it.isLikelyCode() } ?: fallback
     }
 }
 
 private fun Double.isFinite(): Boolean = !isNaN() && !isInfinite()
+
+private fun String.isLikelyCode(): Boolean {
+    val trimmed = trim()
+    if (trimmed.isEmpty()) return true
+    return trimmed.all { it.isDigit() || it == '-' || it == '+' }
+}
+
+private fun String.hasJapaneseCharacters(): Boolean {
+    return any { char ->
+        val block = Character.UnicodeBlock.of(char)
+        block == Character.UnicodeBlock.HIRAGANA ||
+            block == Character.UnicodeBlock.KATAKANA ||
+            block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS ||
+            block == Character.UnicodeBlock.CJK_SYMBOLS_AND_PUNCTUATION ||
+            block == Character.UnicodeBlock.HALFWIDTH_AND_FULLWIDTH_FORMS
+    }
+}

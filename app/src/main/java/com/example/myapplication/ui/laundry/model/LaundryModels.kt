@@ -26,5 +26,6 @@ data class LaundryUiState(
     val isProcessing: Boolean = false,
     val activeTab: LaundryTab = LaundryTab.HOME,
     val homeLaundryItems: List<LaundryItemUi> = emptyList(),
-    val dryCleaningItems: List<LaundryItemUi> = emptyList()
+    val dryCleaningItems: List<LaundryItemUi> = emptyList(),
+    val selectedHomeItemIds: Set<String> = emptySet()
 )

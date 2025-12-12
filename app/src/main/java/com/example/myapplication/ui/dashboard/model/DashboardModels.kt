@@ -3,6 +3,7 @@ package com.example.myapplication.ui.dashboard.model
 import com.example.myapplication.domain.model.CasualForecastDay
 import com.example.myapplication.domain.model.CasualForecastSegment
 import com.example.myapplication.domain.model.ClothingItem
+import com.example.myapplication.domain.model.ClothingType
 import com.example.myapplication.domain.model.EnvironmentMode
 import com.example.myapplication.domain.model.TpoMode
 import com.example.myapplication.domain.model.WeatherSnapshot
@@ -50,7 +51,37 @@ data class DashboardUiState(
     val clockDebug: ClockDebugUiState? = null,
     val wearFeedbackDebug: WearFeedbackDebugUiState? = null,
     val casualForecast: CasualForecastUiState? = null,
-    val comebackDialogMessage: UiMessage? = null
+    val comebackDialogMessage: UiMessage? = null,
+    val colorWish: ColorWishUiState = ColorWishUiState()
+)
+
+data class ColorWishUiState(
+    val isFeatureAvailable: Boolean = false,
+    val activePreference: ColorWishPreferenceUi? = null,
+    val isDialogVisible: Boolean = false,
+    val typeOptions: List<ColorWishTypeOption> = emptyList(),
+    val selectedType: ClothingType? = null,
+    val colorOptions: List<ColorWishColorOption> = emptyList(),
+    val selectedColorHex: String? = null,
+    val isConfirmEnabled: Boolean = false,
+    val emptyStateMessage: String? = null
+)
+
+data class ColorWishPreferenceUi(
+    val type: ClothingType,
+    val colorHex: String,
+    val typeLabel: String,
+    val colorLabel: String
+)
+
+data class ColorWishTypeOption(
+    val type: ClothingType,
+    val label: String
+)
+
+data class ColorWishColorOption(
+    val colorHex: String,
+    val label: String
 )
 
 data class WeatherLocationUiState(

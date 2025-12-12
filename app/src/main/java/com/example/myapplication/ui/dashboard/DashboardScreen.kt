@@ -10,7 +10,6 @@ import androidx.annotation.StringRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,9 +29,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -40,15 +42,21 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.RadioButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -61,6 +69,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -68,7 +77,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -81,6 +89,7 @@ import com.example.myapplication.data.sample.SampleData
 import com.example.myapplication.domain.model.CasualForecastDay
 import com.example.myapplication.domain.model.CasualForecastSegment
 import com.example.myapplication.domain.model.ClothingItem
+import com.example.myapplication.domain.model.ClothingType
 import com.example.myapplication.domain.model.ColorGroup
 import com.example.myapplication.domain.model.EnvironmentMode
 import com.example.myapplication.ui.dashboard.model.OutfitSuggestion
@@ -99,6 +108,10 @@ import com.example.myapplication.ui.dashboard.model.CasualForecastSegmentOption
 import com.example.myapplication.ui.dashboard.model.CasualForecastSummary
 import com.example.myapplication.ui.dashboard.model.CasualForecastUiState
 import com.example.myapplication.ui.dashboard.model.DashboardUiState
+import com.example.myapplication.ui.dashboard.model.ColorWishUiState
+import com.example.myapplication.ui.dashboard.model.ColorWishPreferenceUi
+import com.example.myapplication.ui.dashboard.model.ColorWishTypeOption
+import com.example.myapplication.ui.dashboard.model.ColorWishColorOption
 import com.example.myapplication.ui.dashboard.model.InventoryAlert
 import com.example.myapplication.ui.dashboard.model.LocationSearchResultUiState
 import com.example.myapplication.ui.dashboard.model.LocationSearchUiState
@@ -151,35 +164,70 @@ fun DashboardScreen(modifier: Modifier = Modifier) {
         }
     }
 
-    DashboardContent(
-        state = state,
-        onModeSelected = viewModel::onModeSelected,
-        onEnvironmentSelected = viewModel::onEnvironmentSelected,
-        onSuggestionSelected = viewModel::onSuggestionSelected,
-        onWearClicked = viewModel::onWearSelected,
-        onRerollSuggestion = viewModel::rerollSuggestion,
-        onReviewInventory = viewModel::onReviewInventoryRequested,
-        onDismissReviewInventory = viewModel::onReviewInventoryDismissed,
-        onRefreshWeather = viewModel::refreshWeather,
-        onCasualDaySelected = viewModel::onCasualForecastDaySelected,
-        onCasualSegmentSelected = viewModel::onCasualForecastSegmentSelected,
-        onWeatherLocationDialogDismissed = viewModel::onWeatherLocationDialogDismissed,
-        onWeatherLocationLabelChanged = viewModel::onWeatherLocationLabelChanged,
-        onWeatherLocationLatitudeChanged = viewModel::onWeatherLocationLatitudeChanged,
-        onWeatherLocationLongitudeChanged = viewModel::onWeatherLocationLongitudeChanged,
-        onUseDeviceLocation = viewModel::onUseDeviceLocationSelected,
-        onApplyWeatherLocationOverride = viewModel::onApplyWeatherLocationOverride,
-        onLocationSearchDismissed = viewModel::onLocationSearchDismissed,
-        onLocationSearchQueryChanged = viewModel::onLocationSearchQueryChanged,
-        onLocationSearchResultSelected = viewModel::onLocationSearchResultSelected,
-        onMapPickerDismissed = viewModel::onMapPickerDismissed,
-        onMapPickerLabelChanged = viewModel::onMapPickerLabelChanged,
-        onMapPickerCoordinateChanged = viewModel::onMapPickerLocationChanged,
-        onMapPickerConfirm = viewModel::onMapPickerConfirmed,
-        onDismissComebackDialog = viewModel::onComebackDialogDismissed,
-        isMapSupported = isMapSupported,
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(viewModel, context) {
+        viewModel.wearUndoEvents.collect { event ->
+            val message = event.message.resolve(context)
+            val actionLabel = if (event.allowUndo) {
+                context.getString(R.string.dashboard_wear_toast_undo)
+            } else {
+                null
+            }
+            val result = snackbarHostState.showSnackbar(
+                message = message,
+                actionLabel = actionLabel,
+                withDismissAction = !event.allowUndo
+            )
+            if (event.allowUndo && result == SnackbarResult.ActionPerformed) {
+                viewModel.onWearUndo(event.snapshot)
+            }
+        }
+    }
+
+    Scaffold(
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         modifier = modifier
-    )
+    ) { innerPadding ->
+        DashboardContent(
+            state = state,
+            onModeSelected = viewModel::onModeSelected,
+            onEnvironmentSelected = viewModel::onEnvironmentSelected,
+            onDestinationSearchRequested = viewModel::onLocationSearchRequested,
+            onSuggestionSelected = viewModel::onSuggestionSelected,
+            onWearClicked = viewModel::onWearSelected,
+            onRerollSuggestion = viewModel::rerollSuggestion,
+            onReviewInventory = viewModel::onReviewInventoryRequested,
+            onDismissReviewInventory = viewModel::onReviewInventoryDismissed,
+            onRefreshWeather = viewModel::refreshWeather,
+            onCasualDaySelected = viewModel::onCasualForecastDaySelected,
+            onCasualSegmentSelected = viewModel::onCasualForecastSegmentSelected,
+            onColorWishButtonClicked = viewModel::onColorWishButtonClicked,
+            onColorWishDialogDismissed = viewModel::onColorWishDialogDismissed,
+            onColorWishTypeSelected = viewModel::onColorWishTypeSelected,
+            onColorWishColorSelected = viewModel::onColorWishColorSelected,
+            onColorWishConfirm = viewModel::onColorWishConfirm,
+            onColorWishClear = viewModel::onColorWishClear,
+            onWeatherLocationDialogDismissed = viewModel::onWeatherLocationDialogDismissed,
+            onWeatherLocationLabelChanged = viewModel::onWeatherLocationLabelChanged,
+            onWeatherLocationLatitudeChanged = viewModel::onWeatherLocationLatitudeChanged,
+            onWeatherLocationLongitudeChanged = viewModel::onWeatherLocationLongitudeChanged,
+            onUseDeviceLocation = viewModel::onUseDeviceLocationSelected,
+            onApplyWeatherLocationOverride = viewModel::onApplyWeatherLocationOverride,
+            onLocationSearchDismissed = viewModel::onLocationSearchDismissed,
+            onLocationSearchQueryChanged = viewModel::onLocationSearchQueryChanged,
+            onLocationSearchResultSelected = viewModel::onLocationSearchResultSelected,
+            onMapPickerDismissed = viewModel::onMapPickerDismissed,
+            onMapPickerLabelChanged = viewModel::onMapPickerLabelChanged,
+            onMapPickerCoordinateChanged = viewModel::onMapPickerLocationChanged,
+            onMapPickerConfirm = viewModel::onMapPickerConfirmed,
+            onDismissComebackDialog = viewModel::onComebackDialogDismissed,
+            isMapSupported = isMapSupported,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        )
+    }
 }
 
 @Composable
@@ -187,6 +235,7 @@ private fun DashboardContent(
     state: DashboardUiState,
     onModeSelected: (TpoMode) -> Unit,
     onEnvironmentSelected: (EnvironmentMode) -> Unit,
+    onDestinationSearchRequested: (String) -> Unit,
     onSuggestionSelected: (OutfitSuggestion) -> Unit,
     onWearClicked: () -> Unit,
     onRerollSuggestion: () -> Unit,
@@ -195,6 +244,12 @@ private fun DashboardContent(
     onRefreshWeather: () -> Unit,
     onCasualDaySelected: (CasualForecastDay) -> Unit,
     onCasualSegmentSelected: (CasualForecastSegment) -> Unit,
+    onColorWishButtonClicked: () -> Unit,
+    onColorWishDialogDismissed: () -> Unit,
+    onColorWishTypeSelected: (ClothingType) -> Unit,
+    onColorWishColorSelected: (String) -> Unit,
+    onColorWishConfirm: () -> Unit,
+    onColorWishClear: () -> Unit,
     onWeatherLocationDialogDismissed: () -> Unit,
     onWeatherLocationLabelChanged: (String) -> Unit,
     onWeatherLocationLatitudeChanged: (String) -> Unit,
@@ -215,6 +270,7 @@ private fun DashboardContent(
     var isMainMenuVisible by rememberSaveable { mutableStateOf(false) }
     var mainMenuDestination by rememberSaveable { mutableStateOf("") }
     var isWearConfirmVisible by rememberSaveable { mutableStateOf(false) }
+    var isMainMenuSaveDialogVisible by rememberSaveable { mutableStateOf(false) }
 
     Box(modifier = modifier.fillMaxSize()) {
         OverviewTabContent(
@@ -226,6 +282,8 @@ private fun DashboardContent(
             onRefreshWeather = onRefreshWeather,
             onCasualDaySelected = onCasualDaySelected,
             onCasualSegmentSelected = onCasualSegmentSelected,
+            onColorWishButtonClicked = onColorWishButtonClicked,
+            onColorWishClear = onColorWishClear,
             modifier = Modifier.fillMaxSize()
         )
 
@@ -245,6 +303,17 @@ private fun DashboardContent(
                 onModeSelected = onModeSelected,
                 onEnvironmentSelected = onEnvironmentSelected,
                 onDestinationChanged = { mainMenuDestination = it },
+                onDestinationSearchRequested = { query ->
+                    isMainMenuVisible = false
+                    onDestinationSearchRequested(query)
+                },
+                onSave = {
+                    isMainMenuVisible = false
+                    isMainMenuSaveDialogVisible = true
+                },
+                onCancel = {
+                    isMainMenuVisible = false
+                },
                 onDismiss = { isMainMenuVisible = false }
             )
         }
@@ -265,6 +334,16 @@ private fun DashboardContent(
             alert = state.alert,
             messages = state.inventoryReviewMessages,
             onDismiss = onDismissReviewInventory
+        )
+    }
+
+    if (state.colorWish.isDialogVisible) {
+        ColorWishDialog(
+            state = state.colorWish,
+            onDismiss = onColorWishDialogDismissed,
+            onTypeSelected = onColorWishTypeSelected,
+            onColorSelected = onColorWishColorSelected,
+            onConfirm = onColorWishConfirm
         )
     }
 
@@ -305,6 +384,23 @@ private fun DashboardContent(
             onPositionChanged = onMapPickerCoordinateChanged
         )
     }
+
+    if (isMainMenuSaveDialogVisible) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { isMainMenuSaveDialogVisible = false },
+            title = {
+                Text(text = stringResource(id = R.string.main_menu_save_dialog_title))
+            },
+            text = {
+                Text(text = stringResource(id = R.string.main_menu_save_dialog_message))
+            },
+            confirmButton = {
+                TextButton(onClick = { isMainMenuSaveDialogVisible = false }) {
+                    Text(text = stringResource(id = R.string.common_ok))
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -317,6 +413,8 @@ private fun OverviewTabContent(
     onRefreshWeather: () -> Unit,
     onCasualDaySelected: (CasualForecastDay) -> Unit,
     onCasualSegmentSelected: (CasualForecastSegment) -> Unit,
+    onColorWishButtonClicked: () -> Unit,
+    onColorWishClear: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     LazyColumn(
@@ -328,6 +426,14 @@ private fun OverviewTabContent(
             Text(
                 text = stringResource(id = R.string.dashboard_title),
                 style = MaterialTheme.typography.titleLarge
+            )
+        }
+
+        item {
+            ColorWishSection(
+                state = state.colorWish,
+                onButtonClick = onColorWishButtonClicked,
+                onClear = onColorWishClear
             )
         }
 
@@ -420,76 +526,228 @@ private fun OverviewTabContent(
     }
 }
 
-    @Composable
-    private fun MainMenuDialog(
-        currentMode: TpoMode,
-        currentEnvironment: EnvironmentMode,
-        destination: String,
-        onModeSelected: (TpoMode) -> Unit,
-        onEnvironmentSelected: (EnvironmentMode) -> Unit,
-        onDestinationChanged: (String) -> Unit,
-        onDismiss: () -> Unit
+@Composable
+private fun ColorWishSection(
+    state: ColorWishUiState,
+    onButtonClick: () -> Unit,
+    onClear: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
-        Dialog(
-            onDismissRequest = onDismiss,
-            properties = DialogProperties(
-                dismissOnBackPress = true,
-                dismissOnClickOutside = true,
-                usePlatformDefaultWidth = false
-            )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            val scrimColor = MaterialTheme.colorScheme.scrim.copy(alpha = 0.6f)
-            val dismissInteraction = remember { MutableInteractionSource() }
-            Box(modifier = Modifier.fillMaxSize()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(scrimColor)
-                        .clickable(
-                            interactionSource = dismissInteraction,
-                            indication = null,
-                            onClick = onDismiss
-                        )
-                )
+            Text(
+                text = stringResource(id = R.string.dashboard_color_wish_button),
+                style = MaterialTheme.typography.titleMedium
+            )
 
-                Surface(
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .padding(horizontal = 24.dp)
-                        .widthIn(max = 420.dp),
-                    shape = RoundedCornerShape(24.dp),
-                    tonalElevation = 8.dp,
-                    shadowElevation = 12.dp
+            Button(
+                onClick = onButtonClick,
+                enabled = state.isFeatureAvailable,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(text = stringResource(id = R.string.dashboard_color_wish_button))
+            }
+
+            state.activePreference?.let { preference ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    MainMenuContent(
-                        currentMode = currentMode,
-                        currentEnvironment = currentEnvironment,
-                        destination = destination,
-                        onModeSelected = onModeSelected,
-                        onEnvironmentSelected = onEnvironmentSelected,
-                        onDestinationChanged = onDestinationChanged
+                    Text(
+                        text = stringResource(
+                            id = R.string.dashboard_color_wish_active_label,
+                            preference.typeLabel,
+                            preference.colorLabel
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
                     )
+                    TextButton(onClick = onClear) {
+                        Text(text = stringResource(id = R.string.dashboard_color_wish_clear))
+                    }
                 }
+            }
 
-                MainMenuButton(
-                    onClick = onDismiss,
-                    isActive = true,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(top = 16.dp, end = 16.dp)
+            val message = state.emptyStateMessage
+                ?: if (!state.isFeatureAvailable) stringResource(id = R.string.dashboard_color_wish_unavailable) else null
+            message?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
     }
+}
 
-    @Composable
-    private fun MainMenuContent(
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ColorWishDialog(
+    state: ColorWishUiState,
+    onDismiss: () -> Unit,
+    onTypeSelected: (ClothingType) -> Unit,
+    onColorSelected: (String) -> Unit,
+    onConfirm: () -> Unit
+) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(text = stringResource(id = R.string.dashboard_color_wish_dialog_title))
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text(
+                    text = stringResource(id = R.string.dashboard_color_wish_type_label),
+                    style = MaterialTheme.typography.labelLarge
+                )
+
+                if (state.typeOptions.isEmpty()) {
+                    Text(text = stringResource(id = R.string.dashboard_color_wish_unavailable))
+                } else {
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        state.typeOptions.forEachIndexed { index, option ->
+                            val selected = option.type == state.selectedType
+                            SegmentedButton(
+                                selected = selected,
+                                onClick = { onTypeSelected(option.type) },
+                                shape = SegmentedButtonDefaults.itemShape(index, state.typeOptions.size),
+                                label = {
+                                    Text(text = option.label)
+                                }
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = stringResource(id = R.string.dashboard_color_wish_color_label),
+                        style = MaterialTheme.typography.labelLarge
+                    )
+
+                    if (state.colorOptions.isEmpty()) {
+                        val fallbackMessage = state.emptyStateMessage
+                            ?: stringResource(id = R.string.dashboard_color_wish_no_colors_for_type)
+                        Text(
+                            text = fallbackMessage,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            state.colorOptions.forEach { option ->
+                                val selected = option.colorHex == state.selectedColorHex
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .selectable(
+                                            selected = selected,
+                                            onClick = { onColorSelected(option.colorHex) }
+                                        ),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    RadioButton(selected = selected, onClick = null)
+                                    Text(
+                                        text = option.label,
+                                        modifier = Modifier.padding(start = 12.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm, enabled = state.isConfirmEnabled) {
+                Text(text = stringResource(id = R.string.dashboard_color_wish_confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = stringResource(id = R.string.dashboard_color_wish_cancel))
+            }
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MainMenuDialog(
+    currentMode: TpoMode,
+    currentEnvironment: EnvironmentMode,
+    destination: String,
+    onModeSelected: (TpoMode) -> Unit,
+    onEnvironmentSelected: (EnvironmentMode) -> Unit,
+    onDestinationChanged: (String) -> Unit,
+    onDestinationSearchRequested: (String) -> Unit,
+    onSave: () -> Unit,
+    onCancel: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    BasicAlertDialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true,
+            usePlatformDefaultWidth = false
+        )
+    ) {
+        Box(
+            modifier = Modifier
+                .padding(horizontal = 24.dp)
+                .widthIn(max = 420.dp)
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp),
+                tonalElevation = 8.dp,
+                shadowElevation = 12.dp
+            ) {
+                MainMenuContent(
+                    currentMode = currentMode,
+                    currentEnvironment = currentEnvironment,
+                    destination = destination,
+                    onModeSelected = onModeSelected,
+                    onEnvironmentSelected = onEnvironmentSelected,
+                    onDestinationChanged = onDestinationChanged,
+                    onDestinationSearchRequested = onDestinationSearchRequested,
+                    onSave = onSave,
+                    onCancel = onCancel
+                )
+            }
+
+            MainMenuButton(
+                onClick = onDismiss,
+                isActive = true,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 12.dp, end = 12.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun MainMenuContent(
         currentMode: TpoMode,
         currentEnvironment: EnvironmentMode,
         destination: String,
         onModeSelected: (TpoMode) -> Unit,
         onEnvironmentSelected: (EnvironmentMode) -> Unit,
         onDestinationChanged: (String) -> Unit,
+        onDestinationSearchRequested: (String) -> Unit,
+        onSave: () -> Unit,
+        onCancel: () -> Unit,
         modifier: Modifier = Modifier
     ) {
         Column(
@@ -547,21 +805,58 @@ private fun OverviewTabContent(
                     text = stringResource(id = R.string.main_menu_destination_label),
                     style = MaterialTheme.typography.titleMedium
                 )
-                OutlinedTextField(
-                    value = destination,
-                    onValueChange = onDestinationChanged,
-                    singleLine = true,
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    placeholder = {
-                        Text(text = stringResource(id = R.string.main_menu_destination_placeholder))
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = destination,
+                        onValueChange = onDestinationChanged,
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Text,
+                            imeAction = ImeAction.Search
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onSearch = { onDestinationSearchRequested(destination) }
+                        ),
+                        placeholder = {
+                            Text(text = stringResource(id = R.string.main_menu_destination_placeholder))
+                        }
+                    )
+                    Button(
+                        onClick = { onDestinationSearchRequested(destination) },
+                        modifier = Modifier.height(56.dp)
+                    ) {
+                        Text(text = stringResource(id = R.string.main_menu_destination_search_button))
                     }
-                )
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onCancel,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(text = stringResource(id = R.string.common_cancel))
+                }
+                Button(
+                    onClick = onSave,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(text = stringResource(id = R.string.main_menu_save_button))
+                }
             }
         }
     }
 
-    @Composable
-    private fun RowScope.MenuSelectionButton(
+@Composable
+private fun RowScope.MenuSelectionButton(
         label: String,
         selected: Boolean,
         onClick: () -> Unit
@@ -585,8 +880,8 @@ private fun OverviewTabContent(
         }
     }
 
-    @Composable
-    private fun MainMenuButton(
+@Composable
+private fun MainMenuButton(
         onClick: () -> Unit,
         modifier: Modifier = Modifier,
         isActive: Boolean = false
@@ -622,10 +917,20 @@ private fun OverviewTabContent(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = "三",
-                    style = MaterialTheme.typography.titleLarge
-                )
+                val lineColor = LocalContentColor.current
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    repeat(3) {
+                        Box(
+                            modifier = Modifier
+                                .width(20.dp)
+                                .height(2.dp)
+                                .background(lineColor, RoundedCornerShape(1.dp))
+                        )
+                    }
+                }
             }
         }
     }
@@ -1106,8 +1411,8 @@ private fun LocationSearchDialog(
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-@androidx.compose.ui.UiComposable
 private fun MapPickerDialog(
     state: MapPickerUiState,
     onDismiss: () -> Unit,
@@ -1122,19 +1427,20 @@ private fun MapPickerDialog(
     var lastZoom by remember { mutableStateOf<Float?>(null) }
     val targetZoom = if (state.zoom > 0f) state.zoom else MAP_PICKER_DEFAULT_ZOOM
 
-    Dialog(
+    BasicAlertDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
             shape = MaterialTheme.shapes.extraLarge,
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 6.dp
         ) {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(24.dp),
+                modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Text(
@@ -1693,10 +1999,32 @@ private fun DashboardScreenPreview() {
                             maxTemperatureCelsius = 24.0,
                             averageApparentTemperatureCelsius = 22.5
                         )
+                    ),
+                    colorWish = ColorWishUiState(
+                        isFeatureAvailable = true,
+                        activePreference = ColorWishPreferenceUi(
+                            type = ClothingType.TOP,
+                            colorHex = "#FFFFFF",
+                            typeLabel = "トップス",
+                            colorLabel = "ホワイト (#FFFFFF)"
+                        ),
+                        typeOptions = listOf(
+                            ColorWishTypeOption(ClothingType.OUTER, "アウター"),
+                            ColorWishTypeOption(ClothingType.TOP, "トップス"),
+                            ColorWishTypeOption(ClothingType.BOTTOM, "ボトムス")
+                        ),
+                        selectedType = ClothingType.TOP,
+                        colorOptions = listOf(
+                            ColorWishColorOption("#FFFFFF", "ホワイト (#FFFFFF)"),
+                            ColorWishColorOption("#1B2A52", "ネイビー (#1B2A52)")
+                        ),
+                        selectedColorHex = "#FFFFFF",
+                        isConfirmEnabled = true
                     )
                 ),
                 onModeSelected = {},
                 onEnvironmentSelected = {},
+                onDestinationSearchRequested = {},
                 onSuggestionSelected = {},
                 onWearClicked = {},
                 onRerollSuggestion = {},
@@ -1705,6 +2033,12 @@ private fun DashboardScreenPreview() {
                 onRefreshWeather = {},
                 onCasualDaySelected = {},
                 onCasualSegmentSelected = {},
+                onColorWishButtonClicked = {},
+                onColorWishDialogDismissed = {},
+                onColorWishTypeSelected = {},
+                onColorWishColorSelected = {},
+                onColorWishConfirm = {},
+                onColorWishClear = {},
                 onWeatherLocationDialogDismissed = {},
                 onWeatherLocationLabelChanged = {},
                 onWeatherLocationLatitudeChanged = {},

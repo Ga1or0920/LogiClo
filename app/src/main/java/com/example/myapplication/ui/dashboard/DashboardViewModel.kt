@@ -53,6 +53,10 @@ import com.example.myapplication.ui.dashboard.model.OutfitSuggestion
 import com.example.myapplication.ui.dashboard.model.CasualForecastSegmentOption
 import com.example.myapplication.ui.dashboard.model.CasualForecastSummary
 import com.example.myapplication.ui.dashboard.model.CasualForecastUiState
+import com.example.myapplication.ui.dashboard.model.ColorWishColorOption
+import com.example.myapplication.ui.dashboard.model.ColorWishPreferenceUi
+import com.example.myapplication.ui.dashboard.model.ColorWishTypeOption
+import com.example.myapplication.ui.dashboard.model.ColorWishUiState
 import com.example.myapplication.ui.dashboard.model.WeatherLocationUiState
 import com.example.myapplication.ui.dashboard.model.LocationSearchUiState
 import com.example.myapplication.ui.dashboard.model.LocationSearchResultUiState
@@ -75,12 +79,14 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.CancellationException
 import kotlin.collections.buildList
+import kotlin.text.RegexOption
 
 private const val LOCATION_SEARCH_MIN_QUERY = 2
 private const val LOCATION_SEARCH_DEBOUNCE_MILLIS = 400L
 private const val DEFAULT_MAP_LATITUDE = 35.681236
 private const val DEFAULT_MAP_LONGITUDE = 139.767125
 private const val DEFAULT_MAP_ZOOM = 9.5f
+private val COLOR_WISH_SUPPORTED_TYPES = listOf(ClothingType.OUTER, ClothingType.TOP, ClothingType.BOTTOM)
 
 class DashboardViewModel(
     private val closetRepository: ClosetRepository,
@@ -107,6 +113,8 @@ class DashboardViewModel(
     private val locationSearchState = MutableStateFlow(LocationSearchState())
     private val mapPickerState = MutableStateFlow(MapPickerState())
     private val reviewDialogState = MutableStateFlow(false)
+    private val colorWishPreference = MutableStateFlow<ColorWishPreference?>(null)
+    private val colorWishDialogState = MutableStateFlow(ColorWishDialogState())
     private val weatherDebugState = MutableStateFlow(
         if (weatherDebugController.isSupported) WeatherDebugUiState() else null
     )
@@ -118,10 +126,13 @@ class DashboardViewModel(
     )
     private val comebackDialogState = MutableStateFlow<UiMessage?>(null)
     private var latestPreferences: UserPreferences = UserPreferences()
+    private var latestClosetItems: List<ClothingItem> = emptyList()
     private var locationSearchJob: Job? = null
 
     private val _wearNotificationEvents = MutableSharedFlow<List<UiMessage>>(extraBufferCapacity = 1)
     val wearNotificationEvents = _wearNotificationEvents.asSharedFlow()
+    private val _wearUndoEvents = MutableSharedFlow<WearUndoEvent>(extraBufferCapacity = 1)
+    val wearUndoEvents = _wearUndoEvents.asSharedFlow()
 
     init {
         observeData()
@@ -189,7 +200,14 @@ class DashboardViewModel(
                 .combine(locationSearchState) { (combined, locationEditor), locationSearch ->
                     Triple(combined.first, combined.second, combined.third) to Pair(locationEditor, locationSearch)
                 }
-                .combine(mapPickerState) { (combined, editorAndSearch), mapPicker ->
+                .combine(colorWishPreference) { (combined, editorAndSearch), colorWishPref ->
+                    Triple(combined, editorAndSearch, colorWishPref)
+                }
+                .combine(colorWishDialogState) { (combined, editorAndSearch, colorWishPref), dialogState ->
+                    Pair(Triple(combined, editorAndSearch, colorWishPref), dialogState)
+                }
+                .combine(mapPickerState) { (combinedBundle, dialogState), mapPicker ->
+                    val (combined, editorAndSearch, colorWishPref) = combinedBundle
                     val (inputsWithDebug, reviewVisible, comebackMessage) = combined
                     val (locationEditor, locationSearch) = editorAndSearch
                     val inputs = inputsWithDebug.base
@@ -207,6 +225,13 @@ class DashboardViewModel(
                     val environment = preferences.lastSelectedEnvironment.takeUnless { it == EnvironmentMode.UNKNOWN }
                         ?: EnvironmentMode.OUTDOOR
                     val closetItems = items.filter { it.status == LaundryStatus.CLOSET }
+                    latestClosetItems = closetItems
+                    val colorWishUiState = buildColorWishUiState(
+                        closetItems = closetItems,
+                        currentPreference = colorWishPref,
+                        dialogState = dialogState
+                    )
+                    val activeColorWish = colorWishPreference.value
                     val casualComputation = if (mode == TpoMode.CASUAL) {
                         buildCasualForecastState(weather, inputs.casualSelection)
                     } else {
@@ -234,7 +259,8 @@ class DashboardViewModel(
                         disallowVividPair = preferences.colorRules.disallowVividPair,
                         allowBlackNavy = preferences.colorRules.allowBlackNavy,
                         temperatureMin = targetMinTemp,
-                        temperatureMax = targetMaxTemp
+                        temperatureMax = targetMaxTemp,
+                        colorWish = activeColorWish
                     )
                     val suggestions = suggestionResult.suggestions
                     suggestionCache = suggestions
@@ -315,7 +341,8 @@ class DashboardViewModel(
                             clockDebug = clockDebug,
                             wearFeedbackDebug = wearFeedback,
                             casualForecast = casualComputation.uiState,
-                            comebackDialogMessage = comebackMessage
+                            comebackDialogMessage = comebackMessage,
+                            colorWish = colorWishUiState
                         )
                     }
                 }
@@ -666,7 +693,8 @@ class DashboardViewModel(
         disallowVividPair: Boolean,
         allowBlackNavy: Boolean,
         temperatureMin: Double,
-        temperatureMax: Double
+        temperatureMax: Double,
+        colorWish: ColorWishPreference?
     ): SuggestionResult {
         val recommendations = mutableListOf<UiMessage>()
 
@@ -709,13 +737,45 @@ class DashboardViewModel(
             recommendations += buildRecommendationMessage(R.string.dashboard_recommendation_weather_bottom, mode, ClothingType.BOTTOM)
         }
 
-        val candidateTops = if (tops.isNotEmpty()) tops else topsInCloset
-        val candidateBottoms = if (bottoms.isNotEmpty()) bottoms else bottomsInCloset
-        val outerCandidates = resolveOuterCandidates(
+        var candidateTops = if (tops.isNotEmpty()) tops else topsInCloset
+        var candidateBottoms = if (bottoms.isNotEmpty()) bottoms else bottomsInCloset
+        var outerCandidates = resolveOuterCandidates(
             outers = outersInCloset,
             temperatureMin = temperatureMin,
             temperatureMax = temperatureMax
         )
+
+        var colorWishApplied = false
+        if (colorWish != null && colorWish.type in COLOR_WISH_SUPPORTED_TYPES) {
+            colorWishApplied = true
+            when (colorWish.type) {
+                ClothingType.TOP -> {
+                    candidateTops = candidateTops.filter { matchesColor(it, colorWish.colorHex) }
+                    if (candidateTops.isEmpty()) {
+                        recommendations += buildColorWishMissingMessage(colorWish)
+                        return SuggestionResult(emptyList(), recommendations.distinct())
+                    }
+                }
+
+                ClothingType.BOTTOM -> {
+                    candidateBottoms = candidateBottoms.filter { matchesColor(it, colorWish.colorHex) }
+                    if (candidateBottoms.isEmpty()) {
+                        recommendations += buildColorWishMissingMessage(colorWish)
+                        return SuggestionResult(emptyList(), recommendations.distinct())
+                    }
+                }
+
+                ClothingType.OUTER -> {
+                    outerCandidates = outerCandidates.filter { matchesColor(it, colorWish.colorHex) }
+                    if (outerCandidates.isEmpty()) {
+                        recommendations += buildColorWishMissingMessage(colorWish)
+                        return SuggestionResult(emptyList(), recommendations.distinct())
+                    }
+                }
+
+                else -> Unit
+            }
+        }
 
         if (candidateTops.isEmpty() || candidateBottoms.isEmpty()) {
             if (recommendations.isEmpty()) {
@@ -803,6 +863,15 @@ class DashboardViewModel(
         if (filteredByColor) {
             recommendations += buildGenericRecommendation(mode, fallbackType)
         }
+        if (colorWishApplied && colorWish != null) {
+            recommendations += UiMessage(
+                resId = R.string.dashboard_color_wish_no_match,
+                args = listOf(
+                    UiMessageArg.Raw(stringResolver(colorWish.type.labelResId())),
+                    UiMessageArg.Raw(colorWish.colorLabel)
+                )
+            )
+        }
         if (recommendations.isEmpty()) {
             recommendations += buildGenericRecommendation(mode, ClothingType.TOP)
             recommendations += buildGenericRecommendation(mode, ClothingType.BOTTOM)
@@ -862,6 +931,142 @@ class DashboardViewModel(
         )
 
         return insights
+    }
+
+    private fun buildColorWishUiState(
+        closetItems: List<ClothingItem>,
+        currentPreference: ColorWishPreference?,
+        dialogState: ColorWishDialogState
+    ): ColorWishUiState {
+        val groupedByType = closetItems
+            .filter { it.type in COLOR_WISH_SUPPORTED_TYPES }
+            .groupBy { it.type }
+
+        val typeOptions = COLOR_WISH_SUPPORTED_TYPES.mapNotNull { type ->
+            val items = groupedByType[type].orEmpty()
+            if (items.isEmpty()) {
+                null
+            } else {
+                ColorWishTypeOption(type = type, label = stringResolver(type.labelResId()))
+            }
+        }
+
+        var resolvedPreference = currentPreference
+        val preferenceMatch = resolvedPreference?.let { pref ->
+            groupedByType[pref.type]?.firstOrNull { matchesColor(it, pref.colorHex) }
+        }
+        if (resolvedPreference != null && preferenceMatch == null) {
+            if (colorWishPreference.value != null) {
+                colorWishPreference.value = null
+            }
+            resolvedPreference = null
+        } else if (resolvedPreference != null && preferenceMatch != null) {
+            val normalizedHex = normalizeColorHex(preferenceMatch.colorHex)
+            val refreshedLabel = resolveColorLabel(preferenceMatch, normalizedHex)
+            if (
+                resolvedPreference.colorHex != normalizedHex ||
+                resolvedPreference.colorLabel != refreshedLabel
+            ) {
+                val updated = resolvedPreference.copy(colorHex = normalizedHex, colorLabel = refreshedLabel)
+                if (colorWishPreference.value != updated) {
+                    colorWishPreference.value = updated
+                }
+                resolvedPreference = updated
+            }
+        }
+
+        val resolvedType = listOfNotNull(
+            dialogState.selectedType,
+            resolvedPreference?.type,
+            typeOptions.firstOrNull()?.type
+        ).firstOrNull { type -> typeOptions.any { it.type == type } }
+
+        val colorOptions = resolvedType?.let { type ->
+            groupedByType[type]
+                ?.groupBy { normalizeColorHex(it.colorHex) }
+                ?.map { (hex, items) ->
+                    ColorWishColorOption(colorHex = hex, label = resolveColorLabel(items.first(), hex))
+                }
+                ?.sortedBy { it.label }
+                ?: emptyList()
+        } ?: emptyList()
+
+        val resolvedColor = listOfNotNull(
+            dialogState.selectedColorHex?.let(::normalizeColorHex),
+            resolvedPreference?.takeIf { it.type == resolvedType }?.colorHex,
+            colorOptions.firstOrNull()?.colorHex
+        ).firstOrNull { candidate -> colorOptions.any { it.colorHex == candidate } }
+
+        if (dialogState.isVisible) {
+            val normalizedDialog = dialogState.copy(
+                selectedType = resolvedType,
+                selectedColorHex = resolvedColor
+            )
+            if (normalizedDialog != dialogState) {
+                colorWishDialogState.value = normalizedDialog
+            }
+        } else if (dialogState.selectedType != null || dialogState.selectedColorHex != null) {
+            colorWishDialogState.value = ColorWishDialogState()
+        }
+
+        val activePreferenceUi = resolvedPreference?.let { pref ->
+            ColorWishPreferenceUi(
+                type = pref.type,
+                colorHex = pref.colorHex,
+                typeLabel = stringResolver(pref.type.labelResId()),
+                colorLabel = pref.colorLabel
+            )
+        }
+
+        val emptyMessage = when {
+            typeOptions.isEmpty() -> stringResolver(R.string.dashboard_color_wish_unavailable)
+            resolvedType != null && colorOptions.isEmpty() -> stringResolver(R.string.dashboard_color_wish_no_colors_for_type)
+            else -> null
+        }
+
+        return ColorWishUiState(
+            isFeatureAvailable = typeOptions.isNotEmpty(),
+            activePreference = activePreferenceUi,
+            isDialogVisible = dialogState.isVisible,
+            typeOptions = typeOptions,
+            selectedType = resolvedType,
+            colorOptions = colorOptions,
+            selectedColorHex = resolvedColor,
+            isConfirmEnabled = resolvedType != null && resolvedColor != null,
+            emptyStateMessage = emptyMessage
+        )
+    }
+
+    private fun resolveColorLabel(item: ClothingItem, normalizedHex: String): String {
+        val groupLabel = item.colorGroup.takeUnless { it == ColorGroup.UNKNOWN }?.let { group ->
+            stringResolver(group.labelResId())
+        }
+        return when {
+            groupLabel.isNullOrBlank() -> normalizedHex
+            groupLabel.equals(normalizedHex, ignoreCase = true) -> normalizedHex
+            else -> "$groupLabel ($normalizedHex)"
+        }
+    }
+
+    private fun normalizeColorHex(raw: String): String {
+        val trimmed = raw.trim()
+        val withoutHash = trimmed.removePrefix("#")
+        return "#" + withoutHash.uppercase(Locale.ROOT)
+    }
+
+    private fun matchesColor(item: ClothingItem, targetHex: String): Boolean {
+        return normalizeColorHex(item.colorHex) == targetHex
+    }
+
+    private fun buildColorWishMissingMessage(preference: ColorWishPreference): UiMessage {
+        val typeLabel = stringResolver(preference.type.labelResId())
+        return UiMessage(
+            resId = R.string.dashboard_color_wish_recommendation_missing,
+            args = listOf(
+                UiMessageArg.Raw(typeLabel),
+                UiMessageArg.Raw(preference.colorLabel)
+            )
+        )
     }
 
     private fun resolveOuterCandidates(
@@ -1178,11 +1383,17 @@ class DashboardViewModel(
         }
     }
 
-    fun onLocationSearchRequested() {
-        if (locationSearchState.value.isVisible) return
+    fun onLocationSearchRequested(initialQuery: String) {
         locationSearchJob?.cancel()
         locationSearchJob = null
-        locationSearchState.value = LocationSearchState(isVisible = true)
+        locationSearchState.value = LocationSearchState(
+            isVisible = true,
+            query = initialQuery,
+            isLoading = false,
+            results = emptyList(),
+            errorMessage = null
+        )
+        scheduleLocationSearch(initialQuery, skipDebounce = true)
     }
 
     fun onLocationSearchDismissed() {
@@ -1192,48 +1403,7 @@ class DashboardViewModel(
     }
 
     fun onLocationSearchQueryChanged(query: String) {
-        if (!locationSearchState.value.isVisible) return
-        val trimmed = query.trim()
-        locationSearchState.update { current ->
-            current.copy(query = query, errorMessage = null, isLoading = trimmed.length >= LOCATION_SEARCH_MIN_QUERY)
-        }
-        locationSearchJob?.cancel()
-        if (trimmed.length < LOCATION_SEARCH_MIN_QUERY) {
-            locationSearchState.update { current ->
-                current.copy(isLoading = false, results = emptyList(), errorMessage = null)
-            }
-            return
-        }
-        locationSearchJob = viewModelScope.launch {
-            delay(LOCATION_SEARCH_DEBOUNCE_MILLIS)
-            try {
-                val results = locationSearchRepository.searchByName(trimmed)
-                locationSearchState.update { current ->
-                    current.copy(
-                        isLoading = false,
-                        results = results,
-                        errorMessage = if (results.isEmpty()) {
-                            stringResolver(R.string.dashboard_weather_location_search_empty)
-                        } else {
-                            null
-                        }
-                    )
-                }
-            } catch (t: Throwable) {
-                if (t is CancellationException) {
-                    throw t
-                }
-                locationSearchState.update { current ->
-                    current.copy(
-                        isLoading = false,
-                        results = emptyList(),
-                        errorMessage = stringResolver(R.string.dashboard_weather_location_search_error)
-                    )
-                }
-            } finally {
-                locationSearchJob = null
-            }
-        }
+        scheduleLocationSearch(query, skipDebounce = false)
     }
 
     fun onLocationSearchResultSelected(resultId: String) {
@@ -1252,6 +1422,92 @@ class DashboardViewModel(
             }
             locationSearchState.value = LocationSearchState()
         }
+    }
+
+    private fun scheduleLocationSearch(query: String, skipDebounce: Boolean) {
+        if (!locationSearchState.value.isVisible) return
+        val trimmed = query.trim()
+        locationSearchState.update { current ->
+            if (!current.isVisible) {
+                current
+            } else {
+                current.copy(
+                    query = query,
+                    errorMessage = null,
+                    isLoading = trimmed.length >= LOCATION_SEARCH_MIN_QUERY,
+                    results = emptyList()
+                )
+            }
+        }
+        locationSearchJob?.cancel()
+        if (trimmed.length < LOCATION_SEARCH_MIN_QUERY) {
+            return
+        }
+        locationSearchJob = viewModelScope.launch {
+            if (!skipDebounce) {
+                delay(LOCATION_SEARCH_DEBOUNCE_MILLIS)
+            }
+            try {
+                val results = locationSearchRepository.searchByName(trimmed)
+                val prioritized = prioritizeJapanResults(results)
+                locationSearchState.update { current ->
+                    if (!current.isVisible) {
+                        current
+                    } else {
+                        current.copy(
+                            isLoading = false,
+                            results = prioritized,
+                            errorMessage = if (prioritized.isEmpty()) {
+                                stringResolver(R.string.dashboard_weather_location_search_empty)
+                            } else {
+                                null
+                            }
+                        )
+                    }
+                }
+            } catch (t: Throwable) {
+                if (t is CancellationException) {
+                    throw t
+                }
+                locationSearchState.update { current ->
+                    if (!current.isVisible) {
+                        current
+                    } else {
+                        current.copy(
+                            isLoading = false,
+                            results = emptyList(),
+                            errorMessage = stringResolver(R.string.dashboard_weather_location_search_error)
+                        )
+                    }
+                }
+            } finally {
+                locationSearchJob = null
+            }
+        }
+    }
+
+    private fun prioritizeJapanResults(results: List<LocationSearchResult>): List<LocationSearchResult> {
+        if (results.isEmpty()) return results
+        val (japan, others) = results.partition { result ->
+            isWithinJapanBounds(result.latitude, result.longitude) || subtitleIndicatesJapan(result.subtitle)
+        }
+        if (japan.isEmpty()) return results
+        return buildList {
+            addAll(japan)
+            addAll(others)
+        }
+    }
+
+    private fun subtitleIndicatesJapan(subtitle: String?): Boolean {
+        if (subtitle.isNullOrBlank()) return false
+        if (subtitle.contains("日本")) return true
+        if (subtitle.contains("japan", ignoreCase = true)) return true
+        return JAPAN_CODE_REGEX.containsMatchIn(subtitle)
+    }
+
+    private fun isWithinJapanBounds(latitude: Double, longitude: Double): Boolean {
+        return latitude in JAPAN_LATITUDE_MIN..JAPAN_LATITUDE_MAX &&
+            longitude in JAPAN_LONGITUDE_MIN..JAPAN_LONGITUDE_MAX
     }
 
     fun onMapPickerRequested() {
@@ -1338,6 +1594,61 @@ class DashboardViewModel(
         }
     }
 
+    fun onColorWishButtonClicked() {
+        colorWishDialogState.update { current ->
+            current.copy(
+                isVisible = true,
+                selectedType = current.selectedType ?: colorWishPreference.value?.type,
+                selectedColorHex = current.selectedColorHex ?: colorWishPreference.value?.colorHex
+            )
+        }
+    }
+
+    fun onColorWishDialogDismissed() {
+        colorWishDialogState.value = ColorWishDialogState()
+    }
+
+    fun onColorWishTypeSelected(type: ClothingType) {
+        colorWishDialogState.update { current ->
+            if (!current.isVisible) {
+                current
+            } else {
+                current.copy(selectedType = type, selectedColorHex = null)
+            }
+        }
+    }
+
+    fun onColorWishColorSelected(colorHex: String) {
+        val normalized = normalizeColorHex(colorHex)
+        colorWishDialogState.update { current ->
+            if (!current.isVisible) current else current.copy(selectedColorHex = normalized)
+        }
+    }
+
+    fun onColorWishConfirm() {
+        val dialog = colorWishDialogState.value
+        val type = dialog.selectedType ?: return
+        val selectedColor = dialog.selectedColorHex ?: return
+        val normalizedColor = normalizeColorHex(selectedColor)
+        val match = latestClosetItems.firstOrNull { it.type == type && matchesColor(it, normalizedColor) }
+        if (match == null) {
+            colorWishDialogState.value = ColorWishDialogState()
+            colorWishPreference.value = null
+            return
+        }
+        val label = resolveColorLabel(match, normalizedColor)
+        colorWishPreference.value = ColorWishPreference(
+            type = type,
+            colorHex = normalizedColor,
+            colorLabel = label
+        )
+        colorWishDialogState.value = ColorWishDialogState()
+    }
+
+    fun onColorWishClear() {
+        colorWishPreference.value = null
+    }
+
     fun onSuggestionSelected(outfit: OutfitSuggestion) {
         selectionState.value = outfit.selectionKey
     }
@@ -1371,6 +1682,7 @@ class DashboardViewModel(
         viewModelScope.launch {
             val weather = _uiState.value.weather ?: weatherRepository.observeCurrentWeather().first()
             val uniqueItems = listOfNotNull(suggestion.top, suggestion.bottom, suggestion.outer).distinctBy { it.id }
+            val originalItems = uniqueItems.map { it.copy() }
             val outcomes = uniqueItems.map { applyWearUseCase.execute(it, weather) }
             outcomes.forEach { outcome -> closetRepository.upsert(outcome.updatedItem) }
             val messages = outcomes.map { outcome -> outcome.toUiMessage(stringResolver) }
@@ -1381,6 +1693,27 @@ class DashboardViewModel(
                 )
             }
             _wearNotificationEvents.emit(messages)
+            _wearUndoEvents.emit(
+                WearUndoEvent(
+                    message = UiMessage(R.string.dashboard_wear_toast_message),
+                    allowUndo = true,
+                    snapshot = originalItems
+                )
+            )
+        }
+    }
+
+    fun onWearUndo(snapshot: List<ClothingItem>) {
+        viewModelScope.launch {
+            if (snapshot.isNotEmpty()) {
+                closetRepository.upsert(snapshot)
+            }
+            _wearUndoEvents.emit(
+                WearUndoEvent(
+                    message = UiMessage(R.string.dashboard_wear_toast_undone),
+                    allowUndo = false
+                )
+            )
         }
     }
 
@@ -1395,6 +1728,11 @@ class DashboardViewModel(
         private const val MANUAL_OVERRIDE_INPUT_PATTERN = "yyyy-MM-dd HH:mm"
         private const val MANUAL_OVERRIDE_DATE_ONLY_PATTERN = "yyyy-MM-dd"
         private const val MANUAL_OVERRIDE_LABEL_PATTERN = "M/d HH:mm"
+        private const val JAPAN_LATITUDE_MIN = 20.0
+        private const val JAPAN_LATITUDE_MAX = 46.8
+        private const val JAPAN_LONGITUDE_MIN = 122.0
+        private const val JAPAN_LONGITUDE_MAX = 154.0
+        private val JAPAN_CODE_REGEX = Regex("\\bjp(?:n)?\\b", RegexOption.IGNORE_CASE)
     }
 
     class Factory(
@@ -1441,6 +1779,24 @@ private data class SuggestionSelectionKey(
     val topId: String,
     val bottomId: String,
     val outerId: String?
+)
+
+data class WearUndoEvent(
+    val message: UiMessage,
+    val allowUndo: Boolean,
+    val snapshot: List<ClothingItem> = emptyList()
+)
+
+private data class ColorWishPreference(
+    val type: ClothingType,
+    val colorHex: String,
+    val colorLabel: String
+)
+
+private data class ColorWishDialogState(
+    val isVisible: Boolean = false,
+    val selectedType: ClothingType? = null,
+    val selectedColorHex: String? = null
 )
 
 private data class CasualForecastSelection(

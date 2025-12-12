@@ -16,6 +16,7 @@ import androidx.compose.material.icons.outlined.LocalLaundryService
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -89,6 +90,7 @@ fun LaundryScreen(modifier: Modifier = Modifier) {
             state = uiState,
             onTabSelected = viewModel::onTabSelected,
             onWashAll = viewModel::onWashAll,
+            onHomeItemSelectionChanged = viewModel::onHomeItemSelectionChanged,
             onSendToDryCleaning = viewModel::onSendToDryCleaning,
             onReceiveFromDryCleaning = viewModel::onReceiveFromDryCleaning,
             modifier = modifier
@@ -104,6 +106,7 @@ private fun LaundryContent(
     state: LaundryUiState,
     onTabSelected: (LaundryTab) -> Unit,
     onWashAll: () -> Unit,
+    onHomeItemSelectionChanged: (String, Boolean) -> Unit,
     onSendToDryCleaning: (String) -> Unit,
     onReceiveFromDryCleaning: (String) -> Unit,
     modifier: Modifier = Modifier
@@ -135,8 +138,10 @@ private fun LaundryContent(
             when (state.activeTab) {
                 LaundryTab.HOME -> HomeLaundrySection(
                     items = state.homeLaundryItems,
+                    selectedIds = state.selectedHomeItemIds,
                     isProcessing = state.isProcessing,
-                    onWashAll = onWashAll
+                    onWashAll = onWashAll,
+                    onSelectionChanged = onHomeItemSelectionChanged
                 )
                 LaundryTab.DRY -> DryCleaningSection(
                     items = state.dryCleaningItems,
@@ -152,8 +157,10 @@ private fun LaundryContent(
 @Composable
 private fun ColumnScope.HomeLaundrySection(
     items: List<LaundryItemUi>,
+    selectedIds: Set<String>,
     isProcessing: Boolean,
-    onWashAll: () -> Unit
+    onWashAll: () -> Unit,
+    onSelectionChanged: (String, Boolean) -> Unit
 ) {
     Button(
         onClick = onWashAll,
@@ -181,7 +188,21 @@ private fun ColumnScope.HomeLaundrySection(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             items(items, key = { it.id }) { item ->
-                LaundryItemCard(item = item, actions = null)
+                LaundryItemCard(
+                    item = item,
+                    leadingContent = {
+                        Checkbox(
+                            checked = item.id in selectedIds,
+                            onCheckedChange = { checked ->
+                                if (!isProcessing) {
+                                    onSelectionChanged(item.id, checked)
+                                }
+                            },
+                            enabled = !isProcessing
+                        )
+                    },
+                    actions = null
+                )
             }
         }
     }
@@ -270,6 +291,7 @@ private fun ColumnScope.DryCleaningSection(
 @Composable
 private fun LaundryItemCard(
     item: LaundryItemUi,
+    leadingContent: (@Composable () -> Unit)? = null,
     actions: (@Composable () -> Unit)?
 ) {
     Card(
@@ -278,6 +300,11 @@ private fun LaundryItemCard(
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                if (leadingContent != null) {
+                    Box(modifier = Modifier.padding(end = 12.dp)) {
+                        leadingContent()
+                    }
+                }
                 ClothingIllustrationSwatch(
                     category = item.category,
                     colorHex = item.colorHex,
@@ -358,10 +385,12 @@ private fun LaundryScreenPreview() {
                 isLoading = false,
                 activeTab = LaundryTab.HOME,
                 homeLaundryItems = homeItems,
-                dryCleaningItems = dryItems
+                dryCleaningItems = dryItems,
+                selectedHomeItemIds = setOf(homeItems.firstOrNull()?.id ?: "")
             ),
             onTabSelected = {},
             onWashAll = {},
+            onHomeItemSelectionChanged = { _, _ -> },
             onSendToDryCleaning = {},
             onReceiveFromDryCleaning = {}
         )

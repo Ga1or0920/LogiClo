@@ -20,11 +20,13 @@ import com.example.myapplication.ui.closet.model.CategoryOption
 import com.example.myapplication.ui.closet.model.ClosetEditorUiState
 import com.example.myapplication.ui.closet.model.ColorOption
 import com.example.myapplication.ui.common.labelResId
+import java.util.Locale
 import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlin.math.max
 import kotlin.math.min
@@ -35,6 +37,7 @@ import kotlin.math.abs
 
 private const val MIN_WEAR_COUNT = 2
 private const val MAX_WEAR_COUNT = 30
+private val NAME_SUFFIX_PATTERN = Regex(" #\\d+$")
 
 class ClosetEditorViewModel(
     private val closetRepository: ClosetRepository,
@@ -204,14 +207,26 @@ class ClosetEditorViewModel(
         _uiState.update { it.copy(isSaving = true) }
         viewModelScope.launch {
             val item = buildClothingItem(current)
-            closetRepository.upsert(item)
+            val numberingResult = resolveDuplicateNumbering(item)
+            if (numberingResult.othersToUpdate.isNotEmpty()) {
+                closetRepository.upsert(numberingResult.othersToUpdate)
+            }
+            closetRepository.upsert(numberingResult.target)
+            if (editingItem != null) {
+                editingItem = numberingResult.target
+            }
             userPreferencesRepository.update { preferences ->
                 val updatedDefaults = preferences.defaultMaxWears.toMutableMap()
-                updatedDefaults[item.category] = if (item.isAlwaysWash) 1 else item.maxWears
+                val savedItem = numberingResult.target
+                updatedDefaults[savedItem.category] = if (savedItem.isAlwaysWash) 1 else savedItem.maxWears
                 preferences.copy(defaultMaxWears = updatedDefaults)
             }
             _uiState.update { state ->
-                state.copy(isSaving = false, saveCompleted = true)
+                state.copy(
+                    name = numberingResult.target.name,
+                    isSaving = false,
+                    saveCompleted = true
+                )
             }
         }
     }
@@ -389,6 +404,71 @@ class ClosetEditorViewModel(
         return abs(a - b) <= tolerance
     }
 
+    private suspend fun resolveDuplicateNumbering(item: ClothingItem): DuplicateNumberingResult {
+        val existingItems = closetRepository.observeAll().first()
+        if (existingItems.isEmpty()) {
+            return DuplicateNumberingResult(target = item, othersToUpdate = emptyList())
+        }
+
+        val existingById = existingItems.associateBy { it.id }
+        val combined = existingItems.filterNot { it.id == item.id } + item
+        val orderLookup = existingItems.mapIndexed { index, clothing -> clothing.id to index }.toMap()
+        val fallbackOrder = existingItems.size
+        val updates = mutableListOf<ClothingItem>()
+        var adjustedTarget = item
+
+        combined.groupBy { it.parameterKey() }.values.forEach { group ->
+            if (group.size <= 1) return@forEach
+            val sorted = group.sortedWith(
+                compareBy<ClothingItem> { orderLookup[it.id] ?: fallbackOrder }
+                    .thenBy { it.id }
+            )
+            sorted.forEachIndexed { index, clothing ->
+                val baseName = clothing.name.removeTrailingCounter().trimEnd()
+                val numberedName = formatNumberedName(baseName, index + 1)
+                if (clothing.name == numberedName) return@forEachIndexed
+
+                val updated = clothing.copy(name = numberedName)
+                if (clothing.id == item.id) {
+                    adjustedTarget = updated
+                } else {
+                    val existingVersion = existingById[clothing.id]
+                    if (existingVersion != null && existingVersion != updated && updates.none { it.id == clothing.id }) {
+                        updates += updated
+                    }
+                }
+            }
+        }
+
+        return DuplicateNumberingResult(target = adjustedTarget, othersToUpdate = updates)
+    }
+
+    private fun formatNumberedName(baseName: String, position: Int): String {
+        return if (position <= 0) baseName else "$baseName #$position"
+    }
+
+    private fun ClothingItem.parameterKey(): ClothingParametersKey {
+        return ClothingParametersKey(
+            category = category,
+            type = type,
+            sleeveLength = sleeveLength,
+            thickness = thickness,
+            comfortMinCelsius = comfortMinCelsius,
+            comfortMaxCelsius = comfortMaxCelsius,
+            colorHex = colorHex.lowercase(Locale.ROOT),
+            colorGroup = colorGroup,
+            pattern = pattern,
+            maxWears = maxWears,
+            isAlwaysWash = isAlwaysWash,
+            cleaningType = cleaningType,
+            brand = brand?.trim()
+        )
+    }
+
+    private fun String.removeTrailingCounter(): String {
+        return NAME_SUFFIX_PATTERN.replace(this, "")
+    }
+
     class Factory(
         private val closetRepository: ClosetRepository,
         private val userPreferencesRepository: UserPreferencesRepository,
@@ -407,6 +487,28 @@ class ClosetEditorViewModel(
         }
     }
 }
+
+// Captures the attributes that define duplicates so numbering stays in sync.
+private data class ClothingParametersKey(
+    val category: ClothingCategory,
+    val type: ClothingType,
+    val sleeveLength: SleeveLength,
+    val thickness: Thickness,
+    val comfortMinCelsius: Double?,
+    val comfortMaxCelsius: Double?,
+    val colorHex: String,
+    val colorGroup: ColorGroup,
+    val pattern: Pattern,
+    val maxWears: Int,
+    val isAlwaysWash: Boolean,
+    val cleaningType: CleaningType,
+    val brand: String?
+)
+
+private data class DuplicateNumberingResult(
+    val target: ClothingItem,
+    val othersToUpdate: List<ClothingItem>
+)
 
 internal fun closetCategoryOptions(): List<CategoryOption> = listOf(
     CategoryOption(

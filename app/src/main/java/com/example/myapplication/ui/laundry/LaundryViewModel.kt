@@ -38,6 +38,7 @@ class LaundryViewModel(
 
     private val tabState = MutableStateFlow(LaundryTab.HOME)
     private val processingState = MutableStateFlow(false)
+    private val homeSelectionState = MutableStateFlow(setOf<String>())
 
     private val _events = MutableSharedFlow<LaundryEvent>()
     val events: SharedFlow<LaundryEvent> = _events
@@ -45,8 +46,9 @@ class LaundryViewModel(
     val uiState: StateFlow<LaundryUiState> = combine(
         closetRepository.observeAll(),
         tabState,
-        processingState
-    ) { items, tab, isProcessing ->
+        processingState,
+        homeSelectionState
+    ) { items, tab, isProcessing, selectedIds ->
         val homeLaundry = items.filter {
             it.status == LaundryStatus.DIRTY && it.cleaningType == CleaningType.HOME
         }
@@ -54,12 +56,21 @@ class LaundryViewModel(
             it.cleaningType == CleaningType.DRY && (it.status == LaundryStatus.DIRTY || it.status == LaundryStatus.CLEANING)
         }
 
-            LaundryUiState(
+        val homeLaundryUi = homeLaundry.map { it.toLaundryItemUi() }
+        val dryCleaningUi = dryCleaning.map { it.toLaundryItemUi() }
+        val homeIds = homeLaundryUi.mapTo(mutableSetOf()) { it.id }
+        val validSelection = selectedIds.filter { it in homeIds }.toSet()
+        if (validSelection.size != selectedIds.size) {
+            homeSelectionState.value = validSelection
+        }
+
+        LaundryUiState(
             isLoading = false,
             isProcessing = isProcessing,
             activeTab = tab,
-            homeLaundryItems = homeLaundry.map { it.toLaundryItemUi() },
-            dryCleaningItems = dryCleaning.map { it.toLaundryItemUi() }
+            homeLaundryItems = homeLaundryUi,
+            dryCleaningItems = dryCleaningUi,
+            selectedHomeItemIds = validSelection
         )
     }.stateIn(
         scope = viewModelScope,
@@ -72,13 +83,20 @@ class LaundryViewModel(
     }
 
     fun onWashAll() {
-        val currentItems = uiState.value.homeLaundryItems
-        if (currentItems.isEmpty() || processingState.value) return
+        val currentState = uiState.value
+        if (processingState.value) return
+
+        val targetItems = if (currentState.selectedHomeItemIds.isNotEmpty()) {
+            currentState.homeLaundryItems.filter { it.id in currentState.selectedHomeItemIds }
+        } else {
+            currentState.homeLaundryItems
+        }
+        if (targetItems.isEmpty()) return
 
         performUpdate(
             successMessageProvider = {
-                val total = currentItems.size
-                val highlight = currentItems.firstOrNull()?.let {
+                val total = targetItems.size
+                val highlight = targetItems.firstOrNull()?.let {
                     val categoryLabel = stringResolver(it.categoryLabelResId)
                     formatClothingDisplayLabel(categoryLabel, it.name, it.colorHex)
                 } ?: run {
@@ -101,10 +119,17 @@ class LaundryViewModel(
                 }
             }
         ) {
-            currentItems.map { it.id }
+            targetItems.map { it.id }
                 .updateItems { item ->
                     item.copy(status = LaundryStatus.CLOSET, currentWears = 0)
                 }
+            homeSelectionState.value = emptySet()
+        }
+    }
+
+    fun onHomeItemSelectionChanged(id: String, isSelected: Boolean) {
+        homeSelectionState.update { current ->
+            if (isSelected) current + id else current - id
         }
     }
 
