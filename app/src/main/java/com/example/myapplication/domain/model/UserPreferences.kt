@@ -1,10 +1,17 @@
 package com.example.myapplication.domain.model
 
-import java.time.Instant
+import java.util.Date
 
-/**
- * ユーザー設定やカラールールなど、Firestore の users コレクションを想定したモデル。
- */
+enum class ThemeOption(val backendValue: String) {
+    LIGHT("light"),
+    DARK("dark"),
+    SYSTEM("system");
+
+    companion object {
+        fun fromBackend(value: String): ThemeOption = entries.firstOrNull { it.backendValue == value }
+            ?: SYSTEM
+    }
+}
 
 data class ColorRules(
     val allowBlackNavy: Boolean = false,
@@ -12,14 +19,15 @@ data class ColorRules(
 )
 
 data class UserPreferences(
-    val lastLogin: Instant? = null,
+    val lastLogin: Date? = null,
     val lastSelectedMode: TpoMode = TpoMode.CASUAL,
     val lastSelectedEnvironment: EnvironmentMode = EnvironmentMode.OUTDOOR,
     val tempOffsets: Map<Thickness, Int> = emptyMap(),
     val colorRules: ColorRules = ColorRules(),
     val defaultMaxWears: Map<ClothingCategory, Int> = emptyMap(),
     val weatherLocationOverride: WeatherLocationOverride? = null,
-    val emailForSignIn: String? = null
+    val emailForSignIn: String? = null,
+    val theme: ThemeOption = ThemeOption.SYSTEM
 )
 
 enum class TpoMode(val backendValue: String) {

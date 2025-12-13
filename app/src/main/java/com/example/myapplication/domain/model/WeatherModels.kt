@@ -1,12 +1,12 @@
 package com.example.myapplication.domain.model
 
-import java.time.Instant
+import java.util.Date
 
 data class WeatherSnapshot(
     val minTemperatureCelsius: Double,
     val maxTemperatureCelsius: Double,
     val humidityPercent: Int,
-    val updatedAt: Instant? = null,
+    val updatedAt: Date? = null,
     val casualSegmentSummaries: List<CasualForecastSegmentSummary> = emptyList()
 )
 

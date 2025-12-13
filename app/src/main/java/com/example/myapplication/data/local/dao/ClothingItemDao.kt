@@ -26,6 +26,9 @@ interface ClothingItemDao {
     @Query("DELETE FROM clothing_items WHERE id = :id")
     suspend fun deleteItem(id: String)
 
+    @Query("DELETE FROM clothing_items")
+    suspend fun deleteAll()
+
     @Query("SELECT * FROM clothing_items WHERE id = :id LIMIT 1")
     suspend fun getById(id: String): ClothingItemEntity?
 

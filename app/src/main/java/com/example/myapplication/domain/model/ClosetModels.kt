@@ -1,6 +1,7 @@
 package com.example.myapplication.domain.model
 
-import java.time.Instant
+import com.google.firebase.firestore.ServerTimestamp
+import java.util.Date
 
 /**
  * クローゼット関連のドメインモデルと列挙型をまとめて定義する。
@@ -116,23 +117,25 @@ enum class CleaningType(val backendValue: String) {
 }
 
 data class ClothingItem(
-    val id: String,
-    val name: String,
-    val category: ClothingCategory,
-    val type: ClothingType,
-    val sleeveLength: SleeveLength,
-    val thickness: Thickness,
+    val id: String = "",
+    val name: String = "",
+    val category: ClothingCategory = ClothingCategory.UNKNOWN,
+    val type: ClothingType = ClothingType.UNKNOWN,
+    val sleeveLength: SleeveLength = SleeveLength.UNKNOWN,
+    val thickness: Thickness = Thickness.UNKNOWN,
     val comfortMinCelsius: Double? = null,
     val comfortMaxCelsius: Double? = null,
-    val colorHex: String,
-    val colorGroup: ColorGroup,
-    val pattern: Pattern,
-    val maxWears: Int,
-    val currentWears: Int,
-    val isAlwaysWash: Boolean,
-    val cleaningType: CleaningType,
-    val status: LaundryStatus,
+    val colorHex: String = "",
+    val colorGroup: ColorGroup = ColorGroup.UNKNOWN,
+    val pattern: Pattern = Pattern.UNKNOWN,
+    val maxWears: Int = 1,
+    val currentWears: Int = 0,
+    val isAlwaysWash: Boolean = false,
+    val cleaningType: CleaningType = CleaningType.UNKNOWN,
+    val status: LaundryStatus = LaundryStatus.CLOSET,
     val brand: String? = null,
     val imageUrl: String? = null,
-    val lastWornDate: Instant? = null
+    val lastWornDate: Date? = null,
+    @ServerTimestamp val createdAt: Date? = null,
+    @ServerTimestamp val updatedAt: Date? = null
 )
