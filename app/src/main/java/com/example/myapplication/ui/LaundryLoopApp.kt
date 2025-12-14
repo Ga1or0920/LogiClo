@@ -10,6 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavType
+import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -31,10 +32,9 @@ import com.example.myapplication.ui.settings.SettingsRoute
  * アプリ全体のナビゲーションと共通 UI フレームを司るコンポーザブル。
  */
 @Composable
-fun LaundryLoopApp() {
+fun LaundryLoopApp(navController: NavHostController, startDestination: String? = null) {
     val appContainer = rememberAppContainer()
-    val appState = rememberLaundryLoopAppState()
-    val navController = appState.navController
+    val appState = rememberLaundryLoopAppState(navController)
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestinationRoute = currentBackStackEntry?.destination?.route
 
@@ -61,9 +61,10 @@ fun LaundryLoopApp() {
                 }
             }
         ) { innerPadding ->
+            val effectiveStartDestination = startDestination ?: AppDestination.Dashboard.route
             NavHost(
                 navController = navController,
-                startDestination = AppDestination.Dashboard.route,
+                startDestination = effectiveStartDestination,
                 modifier = Modifier.padding(innerPadding)
             ) {
                 composable(AppDestination.Dashboard.route) {
@@ -98,6 +99,14 @@ fun LaundryLoopApp() {
                         onClose = { navController.popBackStack() },
                         onSaved = { navController.popBackStack() }
                     )
+                }
+                // --- 追加: フィードバック遷移先 ---
+                composable(
+                    route = "feedback/pending"
+                ) {
+                    // TODO: PendingFeedbackScreen等、該当画面を呼び出す
+                    // ここに画面が未実装の場合は仮のTextを表示
+                    androidx.compose.material3.Text("着用フィードバック画面（仮）")
                 }
             }
         }

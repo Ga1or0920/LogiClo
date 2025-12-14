@@ -68,6 +68,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.NavController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -267,6 +269,7 @@ private fun DashboardContent(
     isMapSupported: Boolean,
     modifier: Modifier = Modifier
 ) {
+    val navController = rememberNavController()
     var isMainMenuVisible by rememberSaveable { mutableStateOf(false) }
     var mainMenuDestination by rememberSaveable { mutableStateOf("") }
     var isWearConfirmVisible by rememberSaveable { mutableStateOf(false) }

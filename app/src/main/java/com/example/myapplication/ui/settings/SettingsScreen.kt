@@ -84,20 +84,21 @@ fun SettingsRoute(navController: NavHostController) {
 
 	val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-	SettingsScreen(
-		weatherDebug = state.weatherDebug,
-		clockDebug = state.clockDebug,
-		wearFeedbackDebug = state.wearFeedbackDebug,
-		onClockDebugNextDayChanged = viewModel::onClockDebugNextDayChanged,
-		onClockDebugManualInputChanged = viewModel::onClockDebugManualOverrideInputChanged,
-		onApplyClockDebugManualOverride = viewModel::applyClockDebugManualOverride,
-		onClearClockDebugManualOverride = viewModel::clearClockDebugManualOverride,
-		onDebugMinTempChanged = viewModel::onDebugMinTemperatureChanged,
-		onDebugMaxTempChanged = viewModel::onDebugMaxTemperatureChanged,
-		onDebugHumidityChanged = viewModel::onDebugHumidityChanged,
-		onApplyWeatherDebug = viewModel::applyWeatherDebugOverride,
-		onClearWeatherDebug = viewModel::clearWeatherDebugOverride
-	)
+	   SettingsScreen(
+		   weatherDebug = state.weatherDebug,
+		   clockDebug = state.clockDebug,
+		   wearFeedbackDebug = state.wearFeedbackDebug,
+		   onClockDebugNextDayChanged = viewModel::onClockDebugNextDayChanged,
+		   onClockDebugManualInputChanged = viewModel::onClockDebugManualOverrideInputChanged,
+		   onApplyClockDebugManualOverride = viewModel::applyClockDebugManualOverride,
+		   onClearClockDebugManualOverride = viewModel::clearClockDebugManualOverride,
+		   onDebugMinTempChanged = viewModel::onDebugMinTemperatureChanged,
+		   onDebugMaxTempChanged = viewModel::onDebugMaxTemperatureChanged,
+		   onDebugHumidityChanged = viewModel::onDebugHumidityChanged,
+		   onApplyWeatherDebug = viewModel::applyWeatherDebugOverride,
+		   onClearWeatherDebug = viewModel::clearWeatherDebugOverride,
+		   navController = navController
+	   )
 }
 
 @Composable
@@ -114,6 +115,7 @@ fun SettingsScreen(
 	onDebugHumidityChanged: (String) -> Unit,
 	onApplyWeatherDebug: () -> Unit,
 	onClearWeatherDebug: () -> Unit,
+	navController: NavHostController,
 	modifier: Modifier = Modifier
 ) {
 	val context = LocalContext.current
@@ -303,11 +305,22 @@ fun SettingsScreen(
 				}
 			}
 
-			wearFeedbackDebug?.let { feedbackState ->
-				item {
-					WearFeedbackDebugCard(state = feedbackState)
-				}
-			}
+			   wearFeedbackDebug?.let { feedbackState ->
+				   item {
+					   WearFeedbackDebugCard(state = feedbackState)
+				   }
+			   }
+			   // デバッグ用：着用フィードバック動作確認ボタン
+			   item {
+				   Button(
+					   onClick = { navController.navigate("feedback/pending") },
+					   modifier = Modifier
+						   .fillMaxWidth()
+						   .padding(vertical = 8.dp)
+				   ) {
+					   Text("着用フィードバック動作確認")
+				   }
+			   }
 		}
 	}
 }
