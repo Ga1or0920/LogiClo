@@ -17,9 +17,9 @@ import com.example.myapplication.ui.common.labelResId
 import com.example.myapplication.ui.laundry.model.LaundryItemUi
 import com.example.myapplication.ui.laundry.model.LaundryTab
 import com.example.myapplication.ui.laundry.model.LaundryUiState
+import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.util.Date
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -193,11 +193,11 @@ class LaundryViewModel(
         lastWornLabel = formatLastWorn(lastWornDate)
     )
 
-    private fun formatLastWorn(date: Date?): String? {
-        if (date == null) return null
+    private fun formatLastWorn(instant: Instant?): String? {
+        if (instant == null) return null
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return null
         val formatter = DateTimeFormatter.ofPattern("M/d H:mm").withZone(ZoneId.systemDefault())
-        return formatter.format(date.toInstant())
+        return formatter.format(instant)
     }
 
     class Factory(

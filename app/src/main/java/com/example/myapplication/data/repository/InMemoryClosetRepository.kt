@@ -1,6 +1,5 @@
 package com.example.myapplication.data.repository
 
-import com.example.myapplication.data.sample.SampleData
 import com.example.myapplication.domain.model.ClothingItem
 import com.example.myapplication.domain.model.LaundryStatus
 import kotlinx.coroutines.flow.Flow
@@ -44,23 +43,5 @@ class InMemoryClosetRepository(
         if (ids.isEmpty()) return emptyList()
         val lookup = ids.toSet()
         return itemsState.value.values.filter { it.id in lookup }
-    }
-
-    override suspend fun syncUp(userId: String) {
-        // No-op for in-memory implementation
-    }
-
-    override suspend fun syncDown(userId: String) {
-        // No-op for in-memory implementation
-    }
-
-    override suspend fun clearAll() {
-        itemsState.value = emptyMap()
-    }
-
-    override suspend fun seedSampleData() {
-        if (itemsState.value.isEmpty()) {
-            itemsState.value = SampleData.closetItems.associateBy { it.id }
-        }
     }
 }

@@ -5,10 +5,10 @@ import com.example.myapplication.domain.model.ClothingItem
 import com.example.myapplication.domain.model.LaundryStatus
 import com.example.myapplication.domain.model.WeatherSnapshot
 import com.example.myapplication.util.time.InstantCompat
-import java.util.Date
+import java.time.Instant
 
 class ApplyWearUseCase(
-    private val clock: () -> Date? = { InstantCompat.nowOrNull() }
+    private val clock: () -> Instant? = { InstantCompat.nowOrNull() }
 ) {
 
     fun execute(item: ClothingItem, weather: WeatherSnapshot): WearOutcome {

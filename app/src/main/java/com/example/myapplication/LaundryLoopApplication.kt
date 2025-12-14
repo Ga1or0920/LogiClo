@@ -3,7 +3,6 @@ package com.example.myapplication
 import android.app.Application
 import com.example.myapplication.data.AppContainer
 import com.example.myapplication.data.DefaultAppContainer
-import com.example.myapplication.data.sample.SampleData
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 
@@ -18,9 +17,7 @@ class LaundryLoopApplication : Application() {
         super.onCreate()
         container = DefaultAppContainer(
             context = this,
-            appScope = applicationScope,
-            seedWeather = SampleData.weather
+            appScope = applicationScope
         )
-        container.syncManager.initialize()
     }
 }

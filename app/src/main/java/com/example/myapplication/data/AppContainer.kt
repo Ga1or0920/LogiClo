@@ -3,6 +3,7 @@ package com.example.myapplication.data
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import com.example.myapplication.data.local.LaundryLoopDatabase
+import com.example.myapplication.data.local.entity.toEntity
 import com.example.myapplication.data.repository.ClosetRepository
 import com.example.myapplication.data.repository.InMemoryClosetRepository
 import com.example.myapplication.data.repository.InMemoryUserPreferencesRepository
@@ -35,7 +36,6 @@ import com.example.myapplication.util.time.InstantCompat
 import com.example.myapplication.util.time.NoOpDebugClockController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
@@ -47,13 +47,14 @@ interface AppContainer {
     val weatherDebugController: WeatherDebugController
     val clockDebugController: DebugClockController
     val locationSearchRepository: LocationSearchRepository
-    val syncManager: SyncManager
 }
 
 class DefaultAppContainer(
     context: Context,
     private val appScope: CoroutineScope,
-    seedWeather: WeatherSnapshot
+    seedClosetItems: List<ClothingItem> = SampleData.closetItems,
+    seedPreferences: UserPreferences = SampleData.defaultUserPreferences,
+    seedWeather: WeatherSnapshot = SampleData.weather
 ) : AppContainer {
 
     private val isDebugBuild: Boolean =
@@ -83,12 +84,11 @@ class DefaultAppContainer(
     override val weatherDebugController: WeatherDebugController = weatherDebugControllerImpl
     override val clockDebugController: DebugClockController = clockDebugControllerImpl
     private val wearFeedbackReminderScheduler = WearFeedbackReminderScheduler(context)
-    override val syncManager: SyncManager = SyncManager(appScope, closetRepository)
 
     init {
         InstantCompat.registerDebugOffsetProvider(clockDebugControllerImpl::currentOffsetMillis)
         appScope.launch(Dispatchers.IO) {
-            closetRepository.seedSampleData()
+            seedDatabaseIfNeeded(seedClosetItems, seedPreferences)
         }
         appScope.launch(Dispatchers.IO) {
             wearFeedbackRepository.observeLatestPending().collectLatest { entry ->
@@ -117,6 +117,21 @@ private fun WeatherLocationOverride.toCoordinates(): OpenMeteoWeatherRepository.
         latitude = latitude,
         longitude = longitude
     )
+
+    private suspend fun seedDatabaseIfNeeded(
+        closetSeed: List<ClothingItem>,
+        preferencesSeed: UserPreferences
+    ) {
+        val clothingDao = database.clothingItemDao()
+        if (clothingDao.countItems() == 0) {
+            clothingDao.upsertItems(closetSeed.map { it.toEntity() })
+        }
+
+        val preferencesDao = database.userPreferencesDao()
+        if (preferencesDao.get() == null) {
+            preferencesDao.upsert(preferencesSeed.toEntity())
+        }
+    }
 }
 
 private const val THIRTY_DAYS_IN_MILLIS: Long = 30L * 24L * 60L * 60L * 1_000L
@@ -150,7 +165,6 @@ class InMemoryAppContainer(
     )
     override val weatherDebugController: WeatherDebugController = weatherDebugControllerImpl
     override val clockDebugController: DebugClockController = clockDebugControllerImpl
-    override val syncManager: SyncManager = SyncManager(CoroutineScope(SupervisorJob()), closetRepository)
 
     init {
         InstantCompat.registerDebugOffsetProvider(clockDebugControllerImpl::currentOffsetMillis)

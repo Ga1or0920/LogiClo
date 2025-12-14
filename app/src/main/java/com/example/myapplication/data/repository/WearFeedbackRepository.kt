@@ -1,13 +1,13 @@
 package com.example.myapplication.data.repository
 
-import com.example.myapplication.domain.model.ClothingItem
-import com.example.myapplication.domain.model.WearFeedback
+import com.example.myapplication.domain.model.WearFeedbackEntry
+import com.example.myapplication.domain.model.WearFeedbackRating
 import kotlinx.coroutines.flow.Flow
 
 interface WearFeedbackRepository {
-    fun observeAll(): Flow<List<WearFeedback>>
-    fun observeLatestPending(): Flow<WearFeedback?>
-    suspend fun recordWear(items: List<ClothingItem>)
-    suspend fun update(feedback: WearFeedback)
-    suspend fun pruneHistory(threshold: Long)
+    fun observeLatestPending(): Flow<WearFeedbackEntry?>
+    suspend fun getLatestPending(): WearFeedbackEntry?
+    suspend fun recordWear(topItemId: String?, bottomItemId: String?)
+    suspend fun submitFeedback(entryId: String, rating: WearFeedbackRating, notes: String?)
+    suspend fun pruneHistory(beforeEpochMillis: Long)
 }

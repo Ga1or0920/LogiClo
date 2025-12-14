@@ -12,8 +12,4 @@ interface ClosetRepository {
     suspend fun delete(id: String)
     suspend fun getItem(id: String): ClothingItem?
     suspend fun getItems(ids: Collection<String>): List<ClothingItem>
-    suspend fun syncUp(userId: String)
-    suspend fun syncDown(userId: String)
-    suspend fun clearAll()
-    suspend fun seedSampleData()
 }

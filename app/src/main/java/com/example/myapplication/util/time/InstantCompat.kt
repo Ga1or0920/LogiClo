@@ -1,25 +1,43 @@
 package com.example.myapplication.util.time
 
-import java.util.Date
+import android.os.Build
+import java.time.Instant
 
+/**
+ * Provides a safe way to obtain [Instant] values while respecting the minSdk requirement.
+ * Returns null on devices that do not support java.time APIs.
+ */
 object InstantCompat {
+    @Volatile
+    private var offsetProvider: (() -> Long)? = null
 
-    private var debugOffsetMillis: Long = 0L
-
-    fun registerDebugOffsetProvider(provider: () -> Long) {
-        debugOffsetMillis = provider()
+    fun registerDebugOffsetProvider(provider: (() -> Long)?) {
+        offsetProvider = provider
     }
 
-    fun nowOrNull(): Date? {
-        if (debugOffsetMillis == 0L) return Date()
-        return Date(System.currentTimeMillis() + debugOffsetMillis)
+    fun nowOrNull(): Instant? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        val base = Instant.now()
+        val offsetMillis = offsetProvider?.invoke() ?: 0L
+        if (offsetMillis != 0L) base.plusMillis(offsetMillis) else base
+    } else {
+        null
     }
 
-    fun toEpochMilliOrNull(date: Date?): Long? {
-        return date?.time
+    fun toEpochMilliOrNull(instant: Instant?): Long? {
+        if (instant == null) return null
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            instant.toEpochMilli()
+        } else {
+            null
+        }
     }
 
-    fun ofEpochMilliOrNull(epochMilli: Long?): Date? {
-        return epochMilli?.let { Date(it) }
+    fun ofEpochMilliOrNull(value: Long?): Instant? {
+        if (value == null) return null
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Instant.ofEpochMilli(value)
+        } else {
+            null
+        }
     }
 }

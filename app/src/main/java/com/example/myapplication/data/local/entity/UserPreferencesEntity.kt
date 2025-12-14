@@ -6,11 +6,11 @@ import androidx.room.PrimaryKey
 import com.example.myapplication.domain.model.ColorRules
 import com.example.myapplication.domain.model.EnvironmentMode
 import com.example.myapplication.domain.model.ClothingCategory
-import com.example.myapplication.domain.model.ThemeOption
 import com.example.myapplication.domain.model.TpoMode
 import com.example.myapplication.domain.model.UserPreferences
 import com.example.myapplication.domain.model.WeatherLocationOverride
 import com.example.myapplication.util.time.InstantCompat
+import java.time.Instant
 
 @Entity(tableName = "user_preferences")
 data class UserPreferencesEntity(
@@ -24,8 +24,7 @@ data class UserPreferencesEntity(
     val weatherLocationLabel: String? = null,
     val weatherLocationLatitude: Double? = null,
     val weatherLocationLongitude: Double? = null,
-    val emailForSignIn: String? = null,
-    @ColumnInfo(defaultValue = "system") val theme: String
+    val emailForSignIn: String? = null
 ) {
     companion object {
         const val SINGLETON_ID: Int = 0
@@ -47,8 +46,7 @@ fun UserPreferencesEntity.toDomain(): UserPreferences = UserPreferences(
         latitude = weatherLocationLatitude,
         longitude = weatherLocationLongitude
     ),
-    emailForSignIn = emailForSignIn,
-    theme = ThemeOption.fromBackend(theme)
+    emailForSignIn = emailForSignIn
 )
 
 fun UserPreferences.toEntity(): UserPreferencesEntity = UserPreferencesEntity(
@@ -61,8 +59,7 @@ fun UserPreferences.toEntity(): UserPreferencesEntity = UserPreferencesEntity(
     weatherLocationLabel = weatherLocationOverride?.label,
     weatherLocationLatitude = weatherLocationOverride?.latitude,
     weatherLocationLongitude = weatherLocationOverride?.longitude,
-    emailForSignIn = emailForSignIn,
-    theme = theme.backendValue
+    emailForSignIn = emailForSignIn
 )
 
 private fun parseDefaultMaxWears(raw: String?): Map<ClothingCategory, Int> {

@@ -1,39 +1,64 @@
 package com.example.myapplication.data.repository
 
 import com.example.myapplication.data.local.dao.WearFeedbackDao
-import com.example.myapplication.data.local.entity.toDomain
-import com.example.myapplication.data.local.entity.toEntity
-import com.example.myapplication.domain.model.ClothingItem
-import com.example.myapplication.domain.model.WearFeedback
+import com.example.myapplication.data.local.entity.WearFeedbackEntity
+import com.example.myapplication.domain.model.WearFeedbackEntry
+import com.example.myapplication.domain.model.WearFeedbackRating
+import com.example.myapplication.util.time.InstantCompat
+import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
-import java.util.Date
 
 class RoomWearFeedbackRepository(
-    private val wearFeedbackDao: WearFeedbackDao
+    private val dao: WearFeedbackDao
 ) : WearFeedbackRepository {
 
-    override fun observeAll(): Flow<List<WearFeedback>> = wearFeedbackDao.observeAll()
-        .map { entities -> entities.map { it.toDomain() } }
+    override fun observeLatestPending(): Flow<WearFeedbackEntry?> =
+        dao.observeLatestPending().map { entity -> entity?.toDomain() }
 
-    override fun observeLatestPending(): Flow<WearFeedback?> = wearFeedbackDao.observeLatestPending()
-        .map { entity -> entity?.toDomain() }
-
-    override suspend fun recordWear(items: List<ClothingItem>) {
-        if (items.isEmpty()) return
-        val entity = WearFeedback(
-            id = items.joinToString("-") { it.id },
-            wornAt = Date(),
-            itemIds = items.map { it.id }
-        ).toEntity()
-        wearFeedbackDao.upsert(entity)
+    override suspend fun getLatestPending(): WearFeedbackEntry? {
+        return dao.getLatestPending()?.toDomain()
     }
 
-    override suspend fun update(feedback: WearFeedback) {
-        wearFeedbackDao.upsert(feedback.toEntity())
+    override suspend fun recordWear(topItemId: String?, bottomItemId: String?) {
+        val nowMillis = InstantCompat.nowOrNull()?.let(InstantCompat::toEpochMilliOrNull)
+            ?: System.currentTimeMillis()
+        val entity = WearFeedbackEntity(
+            id = UUID.randomUUID().toString(),
+            wornAtEpochMillis = nowMillis,
+            topItemId = topItemId,
+            bottomItemId = bottomItemId,
+            rating = null,
+            notes = null,
+            submittedAtEpochMillis = null
+        )
+        dao.upsert(entity)
     }
 
-    override suspend fun pruneHistory(threshold: Long) {
-        wearFeedbackDao.pruneHistory(threshold)
+    override suspend fun submitFeedback(entryId: String, rating: WearFeedbackRating, notes: String?) {
+        val submittedMillis = InstantCompat.nowOrNull()?.let(InstantCompat::toEpochMilliOrNull)
+            ?: System.currentTimeMillis()
+        dao.updateSubmission(
+            id = entryId,
+            rating = rating.backendValue,
+            notes = notes?.takeIf { it.isNotBlank() },
+            submittedAtEpochMillis = submittedMillis
+        )
     }
+
+    override suspend fun pruneHistory(beforeEpochMillis: Long) {
+        dao.pruneSubmittedBefore(beforeEpochMillis)
+    }
+}
+
+private fun WearFeedbackEntity.toDomain(): WearFeedbackEntry {
+    return WearFeedbackEntry(
+        id = id,
+        wornAt = InstantCompat.ofEpochMilliOrNull(wornAtEpochMillis),
+        topItemId = topItemId,
+        bottomItemId = bottomItemId,
+        rating = WearFeedbackRating.fromBackend(rating),
+        notes = notes,
+        submittedAt = InstantCompat.ofEpochMilliOrNull(submittedAtEpochMillis)
+    )
 }

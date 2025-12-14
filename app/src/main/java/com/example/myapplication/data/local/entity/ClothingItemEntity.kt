@@ -11,7 +11,8 @@ import com.example.myapplication.domain.model.LaundryStatus
 import com.example.myapplication.domain.model.Pattern
 import com.example.myapplication.domain.model.SleeveLength
 import com.example.myapplication.domain.model.Thickness
-import java.util.Date
+import com.example.myapplication.util.time.InstantCompat
+import java.time.Instant
 
 @Entity(tableName = "clothing_items")
 data class ClothingItemEntity(
@@ -33,7 +34,7 @@ data class ClothingItemEntity(
     val status: String,
     val brand: String?,
     val imageUrl: String?,
-    val lastWornDate: Long?
+    val lastWornEpochMillis: Long?
 )
 
 fun ClothingItemEntity.toDomain(): ClothingItem = ClothingItem(
@@ -55,7 +56,7 @@ fun ClothingItemEntity.toDomain(): ClothingItem = ClothingItem(
     status = LaundryStatus.fromBackend(status),
     brand = brand,
     imageUrl = imageUrl,
-    lastWornDate = lastWornDate?.let { Date(it) }
+    lastWornDate = InstantCompat.ofEpochMilliOrNull(lastWornEpochMillis)
 )
 
 fun ClothingItem.toEntity(): ClothingItemEntity = ClothingItemEntity(
@@ -77,5 +78,5 @@ fun ClothingItem.toEntity(): ClothingItemEntity = ClothingItemEntity(
     status = status.backendValue,
     brand = brand,
     imageUrl = imageUrl,
-    lastWornDate = lastWornDate?.time
+    lastWornEpochMillis = InstantCompat.toEpochMilliOrNull(lastWornDate)
 )

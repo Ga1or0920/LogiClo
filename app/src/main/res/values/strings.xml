@@ -315,5 +315,4 @@
     <string name="color_group_pastel">パステル</string>
     <string name="color_group_other">その他</string>
     <string name="color_group_unknown">不明</string>
-    <string name="default_web_client_id">YOUR_WEB_CLIENT_ID</string>
 </resources>

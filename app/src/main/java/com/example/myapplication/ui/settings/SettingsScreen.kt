@@ -1,12 +1,7 @@
 package com.example.myapplication.ui.settings
 
-import android.app.Activity
-import android.content.Intent
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -20,11 +15,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -33,11 +33,11 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -45,12 +45,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import com.example.myapplication.R
-import com.example.myapplication.domain.model.ThemeOption
 import com.example.myapplication.ui.common.formatWeatherTimestamp
 import com.example.myapplication.ui.common.resolve
 import com.example.myapplication.ui.dashboard.DashboardViewModel
@@ -59,15 +60,11 @@ import com.example.myapplication.ui.dashboard.model.WearFeedbackDebugUiState
 import com.example.myapplication.ui.dashboard.model.WeatherDebugUiState
 import com.example.myapplication.ui.navigation.AppDestination
 import com.example.myapplication.ui.providers.LocalAppContainer
-import com.google.android.gms.auth.api.signin.GoogleSignIn
-import com.google.android.gms.auth.api.signin.GoogleSignInOptions
-import kotlinx.coroutines.launch
 
 @Composable
 fun SettingsRoute(navController: NavHostController) {
     val context = LocalContext.current
     val appContainer = LocalAppContainer.current
-    val coroutineScope = rememberCoroutineScope()
 
     val parentEntry = remember(navController) {
         navController.getBackStackEntry(AppDestination.Dashboard.route)
@@ -90,37 +87,28 @@ fun SettingsRoute(navController: NavHostController) {
 
     val dashboardState by dashboardViewModel.uiState.collectAsStateWithLifecycle()
     val settingsState by settingsViewModel.uiState.collectAsStateWithLifecycle()
-    val userPreferences by appContainer.userPreferencesRepository.observe().collectAsStateWithLifecycle(null)
 
-    userPreferences?.let {
-        SettingsScreen(
-            settingsUiState = settingsState,
-            weatherDebug = dashboardState.weatherDebug,
-            clockDebug = dashboardState.clockDebug,
-            wearFeedbackDebug = dashboardState.wearFeedbackDebug,
-            themeOption = it.theme,
-            onUsernameChanged = settingsViewModel::onUsernameChange,
-            onSendEmailLink = settingsViewModel::sendEmailLink,
-            onGoogleSignIn = { intent -> settingsViewModel.handleGoogleSignInResult(intent) },
-            onLogout = settingsViewModel::logout,
-            onThemeChanged = { newTheme ->
-                coroutineScope.launch {
-                    appContainer.userPreferencesRepository.update { current ->
-                        current.copy(theme = newTheme)
-                    }
-                }
-            },
-            onClockDebugNextDayChanged = dashboardViewModel::onClockDebugNextDayChanged,
-            onClockDebugManualInputChanged = dashboardViewModel::onClockDebugManualOverrideInputChanged,
-            onApplyClockDebugManualOverride = dashboardViewModel::applyClockDebugManualOverride,
-            onClearClockDebugManualOverride = dashboardViewModel::clearClockDebugManualOverride,
-            onDebugMinTempChanged = dashboardViewModel::onDebugMinTemperatureChanged,
-            onDebugMaxTempChanged = dashboardViewModel::onDebugMaxTemperatureChanged,
-            onDebugHumidityChanged = dashboardViewModel::onDebugHumidityChanged,
-            onApplyWeatherDebug = dashboardViewModel::applyWeatherDebugOverride,
-            onClearWeatherDebug = dashboardViewModel::clearWeatherDebugOverride
-        )
-    }
+    SettingsScreen(
+        settingsUiState = settingsState,
+        weatherDebug = dashboardState.weatherDebug,
+        clockDebug = dashboardState.clockDebug,
+        wearFeedbackDebug = dashboardState.wearFeedbackDebug,
+        onUsernameChanged = settingsViewModel::onUsernameChange,
+        onPasswordChanged = settingsViewModel::onPasswordChange,
+        onLogin = settingsViewModel::login,
+        onRegister = settingsViewModel::register,
+        onSendEmailLink = settingsViewModel::sendEmailLink,
+        onLogout = settingsViewModel::logout,
+        onClockDebugNextDayChanged = dashboardViewModel::onClockDebugNextDayChanged,
+        onClockDebugManualInputChanged = dashboardViewModel::onClockDebugManualOverrideInputChanged,
+        onApplyClockDebugManualOverride = dashboardViewModel::applyClockDebugManualOverride,
+        onClearClockDebugManualOverride = dashboardViewModel::clearClockDebugManualOverride,
+        onDebugMinTempChanged = dashboardViewModel::onDebugMinTemperatureChanged,
+        onDebugMaxTempChanged = dashboardViewModel::onDebugMaxTemperatureChanged,
+        onDebugHumidityChanged = dashboardViewModel::onDebugHumidityChanged,
+        onApplyWeatherDebug = dashboardViewModel::applyWeatherDebugOverride,
+        onClearWeatherDebug = dashboardViewModel::clearWeatherDebugOverride
+    )
 }
 
 @Composable
@@ -129,12 +117,12 @@ fun SettingsScreen(
     weatherDebug: WeatherDebugUiState?,
     clockDebug: ClockDebugUiState?,
     wearFeedbackDebug: WearFeedbackDebugUiState?,
-    themeOption: ThemeOption,
     onUsernameChanged: (String) -> Unit,
+    onPasswordChanged: (String) -> Unit,
+    onLogin: () -> Unit,
+    onRegister: () -> Unit,
     onSendEmailLink: () -> Unit,
-    onGoogleSignIn: (Intent?) -> Unit,
     onLogout: () -> Unit,
-    onThemeChanged: (ThemeOption) -> Unit,
     onClockDebugNextDayChanged: (Boolean) -> Unit,
     onClockDebugManualInputChanged: (String) -> Unit,
     onApplyClockDebugManualOverride: () -> Unit,
@@ -149,17 +137,10 @@ fun SettingsScreen(
     val context = LocalContext.current
     val hasDebugContent = weatherDebug != null || clockDebug != null || wearFeedbackDebug != null
 
+    var isPasswordVisible by rememberSaveable { mutableStateOf(false) }
+    var selectedTheme by rememberSaveable { mutableStateOf(SettingsThemeOption.SYSTEM) }
     var notificationsEnabled by rememberSaveable { mutableStateOf(true) }
     var isDebugEnabled by rememberSaveable(hasDebugContent) { mutableStateOf(hasDebugContent) }
-
-    val googleSignInLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult(),
-        onResult = { result ->
-            if (result.resultCode == Activity.RESULT_OK) {
-                onGoogleSignIn(result.data)
-            }
-        }
-    )
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -202,28 +183,50 @@ fun SettingsScreen(
                     if (settingsUiState.emailSent) {
                         Text("ログイン用のメールを送信しました。メール内のリンクをクリックしてログインしてください。")
                     } else {
+                        OutlinedTextField(
+                            value = settingsUiState.password,
+                            onValueChange = onPasswordChanged,
+                            label = { Text(stringResource(id = R.string.settings_account_password_label)) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                            visualTransformation = if (isPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                            placeholder = {
+                                Text(text = stringResource(id = R.string.settings_account_password_placeholder))
+                            },
+                            trailingIcon = {
+                                IconButton(onClick = { isPasswordVisible = !isPasswordVisible }) {
+                                    Icon(
+                                        imageVector = if (isPasswordVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                        contentDescription = stringResource(
+                                            if (isPasswordVisible) R.string.settings_account_password_hide else R.string.settings_account_password_show
+                                        )
+                                    )
+                                }
+                            },
+                            isError = settingsUiState.authError != null
+                        )
+
                         if (settingsUiState.isLoading) {
                             CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
                         } else {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Button(
-                                    onClick = onSendEmailLink,
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text(text = "メールリンクでログイン")
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)){
+                                    Button(
+                                        onClick = onLogin,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text(text = stringResource(id = R.string.settings_login))
+                                    }
+                                    OutlinedButton(
+                                        onClick = onRegister,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text(text = stringResource(id = R.string.settings_account_register))
+                                    }
                                 }
-                                OutlinedButton(
-                                    onClick = {
-                                        val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-                                            .requestIdToken(context.getString(R.string.default_web_client_id))
-                                            .requestEmail()
-                                            .build()
-                                        val googleSignInClient = GoogleSignIn.getClient(context, gso)
-                                        googleSignInLauncher.launch(googleSignInClient.signInIntent)
-                                    },
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text(text = stringResource(id = R.string.settings_login_google))
+                                TextButton(onClick = onSendEmailLink, modifier = Modifier.fillMaxWidth()) {
+                                    Text(text = "メールリンクでログイン")
                                 }
                             }
                         }
@@ -245,8 +248,8 @@ fun SettingsScreen(
         }
         item {
             ThemeSelectorRow(
-                selected = themeOption,
-                onSelected = onThemeChanged
+                selected = selectedTheme,
+                onSelected = { selectedTheme = it }
             )
         }
         item {
@@ -351,10 +354,10 @@ private fun NotificationToggleRow(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ThemeSelectorRow(
-    selected: ThemeOption,
-    onSelected: (ThemeOption) -> Unit
+    selected: SettingsThemeOption,
+    onSelected: (SettingsThemeOption) -> Unit
 ) {
-    val options = ThemeOption.entries
+    val options = SettingsThemeOption.entries
     BoxWithConstraints {
         val segmentWidth = if (options.isNotEmpty()) maxWidth / options.size else maxWidth
         SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
@@ -371,13 +374,11 @@ private fun ThemeSelectorRow(
     }
 }
 
-@get:StringRes
-private val ThemeOption.labelRes: Int
-    get() = when (this) {
-        ThemeOption.LIGHT -> R.string.settings_theme_light
-        ThemeOption.DARK -> R.string.settings_theme_dark
-        ThemeOption.SYSTEM -> R.string.settings_theme_system
-    }
+private enum class SettingsThemeOption(@StringRes val labelRes: Int) {
+    LIGHT(R.string.settings_theme_light),
+    DARK(R.string.settings_theme_dark),
+    SYSTEM(R.string.settings_theme_system)
+}
 
 @Composable
 private fun WeatherDebugCard(
