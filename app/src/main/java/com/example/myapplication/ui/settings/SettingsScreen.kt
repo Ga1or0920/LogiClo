@@ -1,5 +1,6 @@
 package com.example.myapplication.ui.settings
 
+import android.app.DatePickerDialog
 import android.widget.Toast
 import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
@@ -39,9 +40,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material3.Slider
+import java.util.Calendar
+import java.text.SimpleDateFormat
+import java.util.Locale
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -439,28 +445,46 @@ private fun WeatherDebugCard(
 				text = stringResource(id = R.string.debug_weather_title),
 				style = MaterialTheme.typography.titleMedium
 			)
-			OutlinedTextField(
-				value = state.minTemperatureInput,
-				onValueChange = onMinTempChanged,
-				label = { Text(stringResource(id = R.string.debug_weather_min_label)) },
-				singleLine = true,
-				keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+			// スライダーで温度と湿度を指定できるようにする
+			val minTemp = state.minTemperatureInput.toDoubleOrNull() ?: 10.0
+			val maxTemp = state.maxTemperatureInput.toDoubleOrNull() ?: 25.0
+			val humidity = state.humidityInput.toIntOrNull() ?: 50
+
+			var sliderMin by remember { mutableStateOf(minTemp.toFloat()) }
+			var sliderMax by remember { mutableStateOf(maxTemp.toFloat()) }
+			var sliderHum by remember { mutableStateOf(humidity.toFloat()) }
+
+			Text(text = stringResource(id = R.string.debug_weather_min_label) + ": ${String.format(Locale.getDefault(), "%.1f", sliderMin)}℃")
+			Slider(
+				value = sliderMin,
+				onValueChange = {
+					sliderMin = it
+					onMinTempChanged(String.format(Locale.getDefault(), "%.1f", it))
+				},
+				valueRange = -20f..40f,
+				steps = 60,
 				modifier = Modifier.fillMaxWidth()
 			)
-			OutlinedTextField(
-				value = state.maxTemperatureInput,
-				onValueChange = onMaxTempChanged,
-				label = { Text(stringResource(id = R.string.debug_weather_max_label)) },
-				singleLine = true,
-				keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+			Text(text = stringResource(id = R.string.debug_weather_max_label) + ": ${String.format(Locale.getDefault(), "%.1f", sliderMax)}℃")
+			Slider(
+				value = sliderMax,
+				onValueChange = {
+					sliderMax = it
+					onMaxTempChanged(String.format(Locale.getDefault(), "%.1f", it))
+				},
+				valueRange = -20f..40f,
+				steps = 60,
 				modifier = Modifier.fillMaxWidth()
 			)
-			OutlinedTextField(
-				value = state.humidityInput,
-				onValueChange = onHumidityChanged,
-				label = { Text(stringResource(id = R.string.debug_weather_humidity_label)) },
-				singleLine = true,
-				keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+			Text(text = stringResource(id = R.string.debug_weather_humidity_label) + ": ${sliderHum.toInt()}%")
+			Slider(
+				value = sliderHum,
+				onValueChange = {
+					sliderHum = it
+					onHumidityChanged(it.toInt().toString())
+				},
+				valueRange = 0f..100f,
+				steps = 100,
 				modifier = Modifier.fillMaxWidth()
 			)
 			Row(
@@ -560,16 +584,22 @@ private fun ClockDebugCard(
 					text = stringResource(id = R.string.debug_clock_manual_label),
 					style = MaterialTheme.typography.bodyMedium
 				)
-				OutlinedTextField(
-					value = state.manualOverrideInput,
-					onValueChange = onManualInputChanged,
-					singleLine = true,
-					keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
-					placeholder = {
-						Text(text = stringResource(id = R.string.debug_clock_manual_placeholder))
-					},
-					modifier = Modifier.fillMaxWidth()
-				)
+				val context = LocalContext.current
+				val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+				var selectedLabel by remember { mutableStateOf(state.manualOverrideInput) }
+				Button(onClick = {
+					val now = Calendar.getInstance()
+					DatePickerDialog(context, { _, year, month, dayOfMonth ->
+						// set to noon by default
+						val cal = Calendar.getInstance()
+						cal.set(year, month, dayOfMonth, 12, 0, 0)
+						val formatted = sdf.format(cal.time)
+						selectedLabel = formatted
+						onManualInputChanged(formatted)
+					}, now.get(Calendar.YEAR), now.get(Calendar.MONTH), now.get(Calendar.DAY_OF_MONTH)).show()
+				}) {
+					Text(text = if (state.manualOverrideInput.isNotBlank()) state.manualOverrideInput else stringResource(id = R.string.debug_clock_manual_placeholder))
+				}
 				Text(
 					text = stringResource(id = R.string.debug_clock_manual_hint),
 					style = MaterialTheme.typography.bodySmall,

@@ -36,8 +36,8 @@ import androidx.navigation.NavHostController
 @Composable
 fun PendingFeedbackRoute(
     navController: NavHostController,
-    itemId: String? = "cardigan-001",
-    itemName: String = "カーディガン",
+    itemId: String? = null,
+    itemName: String = "アイテム",
     currentUpperLimit: Int = 22,
     suggestedUpperLimit: Int = 20,
     onUpdateThreshold: (String, Int) -> Unit = { _, _ -> }
@@ -49,8 +49,10 @@ fun PendingFeedbackRoute(
     val scope = rememberCoroutineScope()
 
     var displayName by remember { mutableStateOf(itemName) }
-    var currentLimit by remember { mutableStateOf(currentUpperLimit) }
-    val suggestedLimit = remember(currentLimit) { (currentLimit - 2).coerceAtLeast(10) }
+    var currentMax by remember { mutableStateOf(currentUpperLimit) }
+    var currentMin by remember { mutableStateOf(currentUpperLimit - 4) }
+    val suggestedHotLimit = remember(currentMax) { (currentMax - 2).coerceAtLeast(10) }
+    val suggestedColdLimit = remember(currentMin) { (currentMin + 2).coerceAtMost(40) }
 
     LaunchedEffect(itemId) {
         itemId?.let { id ->
@@ -59,7 +61,8 @@ fun PendingFeedbackRoute(
                 val item = repo.getItem(id)
                 if (item != null) {
                     displayName = item.name ?: displayName
-                    item.comfortMaxCelsius?.let { currentLimit = it.toInt() }
+                    item.comfortMaxCelsius?.let { currentMax = it.toInt() }
+                    item.comfortMinCelsius?.let { currentMin = it.toInt() }
                 }
             } catch (e: Exception) {
                 // ignore - keep defaults
@@ -79,7 +82,7 @@ fun PendingFeedbackRoute(
         Card(modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium) {
             Column(modifier = Modifier.padding(12.dp)) {
                 Text(text = displayName, style = MaterialTheme.typography.titleMedium)
-                Text(text = "適正上限: ${currentLimit}℃", style = MaterialTheme.typography.bodySmall)
+                Text(text = "適正気温帯: ${currentMin}℃〜${currentMax}℃", style = MaterialTheme.typography.bodySmall)
             }
         }
 
@@ -99,8 +102,8 @@ fun PendingFeedbackRoute(
 
             OutlinedButton(
                 onClick = {
-                    Toast.makeText(context, "ありがとうございます（記録されました）", Toast.LENGTH_SHORT).show()
-                    navController.popBackStack()
+                    selectedFeeling = "ok"
+                    showConfirm = true
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -109,8 +112,8 @@ fun PendingFeedbackRoute(
 
             OutlinedButton(
                 onClick = {
-                    Toast.makeText(context, "ありがとうございます（記録されました）", Toast.LENGTH_SHORT).show()
-                    navController.popBackStack()
+                    selectedFeeling = "cold"
+                    showConfirm = true
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -119,37 +122,72 @@ fun PendingFeedbackRoute(
         }
     }
 
-    if (showConfirm && selectedFeeling == "hot") {
+    if (showConfirm && selectedFeeling != null) {
+        // ダイアログの内容は選択内容に応じて分岐する
         AlertDialog(
             onDismissRequest = { showConfirm = false },
-                title = { Text(text = "${displayName}の設定を更新しますか？") },
+            title = {
+                Text(
+                    text = when (selectedFeeling) {
+                        "hot" -> "${displayName}の設定を更新しますか？"
+                        "cold" -> "${displayName}は寒かったと記録しますか？"
+                        else -> "${displayName}のフィードバックを記録しますか？"
+                    }
+                )
+            },
             text = {
-                Text(text = "${displayName}の適正上限を ${currentLimit}℃ → ${suggestedLimit}℃ に下げますか？")
+                Text(
+                    text = when (selectedFeeling) {
+                        "hot" -> "${displayName}の適正上限を ${currentMax}℃ → ${suggestedHotLimit}℃ に下げますか？"
+                        "cold" -> "${displayName}の適正下限を ${currentMin}℃ → ${suggestedColdLimit}℃ に上げますか？"
+                        else -> "${displayName}がちょうど良かったと記録します。"
+                    }
+                )
             },
             confirmButton = {
                 Button(onClick = {
                     showConfirm = false
                     itemId?.let { id ->
-                        // リポジトリ経由でアイテムの comfortMaxCelsius を更新
-                        scope.launch {
-                            try {
-                                val repo = appContainer.closetRepository
-                                val item = repo.getItem(id)
-                                if (item != null) {
-                                    val updated = item.copy(comfortMaxCelsius = suggestedLimit.toDouble())
-                                    repo.upsert(updated)
+                        // リポジトリ経由でアイテムの快適温度帯を更新
+                        if (selectedFeeling == "hot") {
+                            scope.launch {
+                                try {
+                                    val repo = appContainer.closetRepository
+                                    val item = repo.getItem(id)
+                                    if (item != null) {
+                                        val updated = item.copy(comfortMaxCelsius = suggestedHotLimit.toDouble())
+                                        repo.upsert(updated)
+                                    }
+                                    onUpdateThreshold(id, suggestedHotLimit)
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "更新に失敗しました: ${e.message}", Toast.LENGTH_SHORT).show()
                                 }
-                                onUpdateThreshold(id, suggestedLimit)
-                            } catch (e: Exception) {
-                                // 更新失敗はトーストで通知
-                                Toast.makeText(context, "更新に失敗しました: ${e.message}", Toast.LENGTH_SHORT).show()
                             }
+                        } else if (selectedFeeling == "cold") {
+                            scope.launch {
+                                try {
+                                    val repo = appContainer.closetRepository
+                                    val item = repo.getItem(id)
+                                    if (item != null) {
+                                        val updated = item.copy(comfortMinCelsius = suggestedColdLimit.toDouble())
+                                        repo.upsert(updated)
+                                    }
+                                    onUpdateThreshold(id, suggestedColdLimit)
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "更新に失敗しました: ${e.message}", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        } else {
+                            // 他の選択肢は現状は記録のみ（トーストで完了表示）
+                            Toast.makeText(context, "ありがとうございます（記録されました）", Toast.LENGTH_SHORT).show()
                         }
+                    } ?: run {
+                        // itemId がない場合は単に記録完了メッセージ
+                        Toast.makeText(context, "ありがとうございます（記録されました）", Toast.LENGTH_SHORT).show()
                     }
-                    Toast.makeText(context, "更新しました。次回から提案が変わります。", Toast.LENGTH_SHORT).show()
                     navController.popBackStack()
                 }) {
-                    Text(text = "更新する")
+                    Text(text = "記録する")
                 }
             },
             dismissButton = {
