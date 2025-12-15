@@ -137,11 +137,11 @@ class WearFeedbackReminderWorker(
             putExtra(MainActivity.EXTRA_TARGET_DESTINATION, FeedbackDestinations.Pending)
             // 通知から特定アイテムへ遷移できるよう、代表的なアイテムIDを添える
             representativeItemId?.let { putExtra(MainActivity.EXTRA_TARGET_ITEM_ID, it) }
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
         addNextIntentWithParentStack(launchIntent)
+        val requestCode = representativeItemId?.hashCode() ?: REQUEST_CODE
         getPendingIntent(
-            REQUEST_CODE,
+            requestCode,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
     }
