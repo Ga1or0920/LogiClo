@@ -13,6 +13,7 @@ import com.example.myapplication.ui.LaundryLoopApp
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import com.example.myapplication.ui.theme.MyApplicationTheme
+import com.example.myapplication.ui.feedback.FeedbackDestinations
 
 class MainActivity : ComponentActivity() {
     private var navController: NavHostController? = null
@@ -21,19 +22,27 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         requestNotificationPermissionIfNeeded()
         val targetDestination = intent.getStringExtra(EXTRA_TARGET_DESTINATION)
+        val targetItemId = intent.getStringExtra(EXTRA_TARGET_ITEM_ID)
         setContent {
             MyApplicationTheme {
                         val controller = rememberNavController()
                         navController = controller
-                        LaundryLoopApp(navController = controller, startDestination = targetDestination)
+                        val startDest = if (targetDestination == FeedbackDestinations.Pending && !targetItemId.isNullOrBlank()) {
+                            "${targetDestination}/${targetItemId}"
+                        } else targetDestination
+                        LaundryLoopApp(navController = controller, startDestination = startDest)
             }
         }
     }
     override fun onNewIntent(intent: android.content.Intent?) {
         super.onNewIntent(intent)
         val targetDestination = intent?.getStringExtra(EXTRA_TARGET_DESTINATION)
+        val targetItemId = intent?.getStringExtra(EXTRA_TARGET_ITEM_ID)
         if (targetDestination != null && navController != null) {
-            navController?.navigate(targetDestination) {
+            val route = if (targetDestination == FeedbackDestinations.Pending && !targetItemId.isNullOrBlank()) {
+                "${targetDestination}/${targetItemId}"
+            } else targetDestination
+            navController?.navigate(route) {
                 popUpTo(navController!!.graph.startDestinationId) { inclusive = false }
                 launchSingleTop = true
                 restoreState = true
@@ -52,5 +61,6 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_TARGET_DESTINATION: String = "target_destination"
+        const val EXTRA_TARGET_ITEM_ID: String = "target_item_id"
     }
 }

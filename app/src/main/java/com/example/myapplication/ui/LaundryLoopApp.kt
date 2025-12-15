@@ -27,6 +27,7 @@ import com.example.myapplication.ui.navigation.rememberLaundryLoopAppState
 import com.example.myapplication.ui.providers.ProvideAppContainer
 import com.example.myapplication.ui.providers.rememberAppContainer
 import com.example.myapplication.ui.settings.SettingsRoute
+import com.example.myapplication.ui.feedback.PendingFeedbackRoute
 
 /**
  * アプリ全体のナビゲーションと共通 UI フレームを司るコンポーザブル。
@@ -100,13 +101,23 @@ fun LaundryLoopApp(navController: NavHostController, startDestination: String? =
                         onSaved = { navController.popBackStack() }
                     )
                 }
-                // --- 追加: フィードバック遷移先 ---
+                // --- 追加: フィードバック遷移先（引数なし・引数ありの両方を受け付ける） ---
                 composable(
                     route = "feedback/pending"
                 ) {
-                    // TODO: PendingFeedbackScreen等、該当画面を呼び出す
-                    // ここに画面が未実装の場合は仮のTextを表示
-                    androidx.compose.material3.Text("着用フィードバック画面（仮）")
+                    PendingFeedbackRoute(navController = navController, onUpdateThreshold = { itemId, newLimit ->
+                        // 実稼働ではViewModel/Repositoryへ更新を委譲
+                    })
+                }
+
+                composable(
+                    route = "feedback/pending/{itemId}",
+                    arguments = listOf(navArgument("itemId") { type = NavType.StringType; nullable = true })
+                ) { backStackEntry ->
+                    val itemId = backStackEntry.arguments?.getString("itemId")
+                    PendingFeedbackRoute(navController = navController, itemId = itemId, onUpdateThreshold = { itemId, newLimit ->
+                        // 実稼働ではViewModel/Repositoryへ更新を委譲
+                    })
                 }
             }
         }

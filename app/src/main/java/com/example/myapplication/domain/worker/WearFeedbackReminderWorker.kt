@@ -56,7 +56,8 @@ class WearFeedbackReminderWorker(
             return Result.success()
         }
 
-        val pendingIntent = createLaunchIntent()
+        val representativeItemId = entryEntity.topItemId ?: entryEntity.bottomItemId
+        val pendingIntent = createLaunchIntent(representativeItemId)
         val contentText = buildContentText(topName, bottomName)
 
         val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
@@ -130,10 +131,12 @@ class WearFeedbackReminderWorker(
         }
     }
 
-    private fun createLaunchIntent() = androidx.core.app.TaskStackBuilder.create(applicationContext).run {
+    private fun createLaunchIntent(representativeItemId: String?) = androidx.core.app.TaskStackBuilder.create(applicationContext).run {
         val launchIntent = Intent(applicationContext, MainActivity::class.java).apply {
             action = Intent.ACTION_VIEW
             putExtra(MainActivity.EXTRA_TARGET_DESTINATION, FeedbackDestinations.Pending)
+            // 通知から特定アイテムへ遷移できるよう、代表的なアイテムIDを添える
+            representativeItemId?.let { putExtra(MainActivity.EXTRA_TARGET_ITEM_ID, it) }
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
         addNextIntentWithParentStack(launchIntent)
