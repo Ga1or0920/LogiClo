@@ -571,17 +571,7 @@ internal fun closetCategoryOptions(): List<CategoryOption> = listOf(
         defaultAlwaysWash = false
     ),
 
-    // Inner
-    CategoryOption(
-        category = ClothingCategory.INNER,
-        labelResId = R.string.clothing_category_inner,
-        type = ClothingType.INNER,
-        defaultSleeve = SleeveLength.NONE,
-        defaultThickness = Thickness.THIN,
-        defaultCleaning = CleaningType.HOME,
-        defaultMaxWears = 3,
-        defaultAlwaysWash = true
-    ),
+
 
     // Bottoms
     CategoryOption(
