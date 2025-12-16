@@ -21,6 +21,7 @@ data class UserPreferencesEntity(
     val allowBlackNavy: Boolean,
     val disallowVividPair: Boolean,
     @ColumnInfo(defaultValue = "{}") val defaultMaxWearsJson: String,
+    val indoorTemperatureCelsius: Double? = null,
     val weatherLocationLabel: String? = null,
     val weatherLocationLatitude: Double? = null,
     val weatherLocationLongitude: Double? = null
@@ -44,7 +45,8 @@ fun UserPreferencesEntity.toDomain(): UserPreferences = UserPreferences(
         label = weatherLocationLabel,
         latitude = weatherLocationLatitude,
         longitude = weatherLocationLongitude
-    )
+    ),
+    indoorTemperatureCelsius = indoorTemperatureCelsius
 )
 
 fun UserPreferences.toEntity(): UserPreferencesEntity = UserPreferencesEntity(
@@ -54,6 +56,7 @@ fun UserPreferences.toEntity(): UserPreferencesEntity = UserPreferencesEntity(
     allowBlackNavy = colorRules.allowBlackNavy,
     disallowVividPair = colorRules.disallowVividPair,
     defaultMaxWearsJson = encodeDefaultMaxWears(defaultMaxWears),
+    indoorTemperatureCelsius = indoorTemperatureCelsius,
     weatherLocationLabel = weatherLocationOverride?.label,
     weatherLocationLatitude = weatherLocationOverride?.latitude,
     weatherLocationLongitude = weatherLocationOverride?.longitude

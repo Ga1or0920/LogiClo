@@ -243,14 +243,16 @@ class DashboardViewModel(
                     }
                     val selectedCasualSummary = casualComputation.uiState?.summary
                     val (targetMinTemp, targetMaxTemp) = if (selectedCasualSummary != null) {
+                        val indoorOverride = preferences.indoorTemperatureCelsius
                         resolveComfortRange(
                             environment = environment,
                             weather = weather,
                             minOverride = selectedCasualSummary.minTemperatureCelsius,
-                            maxOverride = selectedCasualSummary.maxTemperatureCelsius
+                            maxOverride = selectedCasualSummary.maxTemperatureCelsius,
+                            indoorOverride = indoorOverride
                         )
                     } else {
-                        resolveComfortRange(environment, weather)
+                        resolveComfortRange(environment, weather, indoorOverride = preferences.indoorTemperatureCelsius)
                     }
                     val suggestionResult = buildSuggestions(
                         mode = mode,
@@ -342,7 +344,8 @@ class DashboardViewModel(
                             wearFeedbackDebug = wearFeedback,
                             casualForecast = casualComputation.uiState,
                             comebackDialogMessage = comebackMessage,
-                            colorWish = colorWishUiState
+                            colorWish = colorWishUiState,
+                            indoorTemperatureCelsius = preferences.indoorTemperatureCelsius
                         )
                     }
                 }
@@ -1123,6 +1126,7 @@ class DashboardViewModel(
         weather: WeatherSnapshot,
         minOverride: Double? = null,
         maxOverride: Double? = null
+        , indoorOverride: Double? = null
     ): Pair<Double, Double> {
         val rawMin = minOf(weather.minTemperatureCelsius, weather.maxTemperatureCelsius)
         val rawMax = maxOf(weather.minTemperatureCelsius, weather.maxTemperatureCelsius)
@@ -1135,7 +1139,7 @@ class DashboardViewModel(
 
         // Indoor days stay mostly in climate-controlled spaces, so narrow the envelope while
         // still respecting the actual outdoor extremes for short trips.
-        val averageTemperature = (minTemperature + maxTemperature) / 2.0
+        val averageTemperature = indoorOverride ?: (minTemperature + maxTemperature) / 2.0
         val candidateMin = (averageTemperature - INDOOR_HALF_RANGE).coerceAtLeast(minTemperature)
         val candidateMax = (averageTemperature + INDOOR_HALF_RANGE).coerceAtMost(maxTemperature)
 
@@ -1300,6 +1304,23 @@ class DashboardViewModel(
         if (_uiState.value.environment == environment) return
         viewModelScope.launch {
             userPreferencesRepository.updateLastSelectedEnvironment(environment)
+        }
+    }
+
+    fun onIndoorTemperatureChanged(value: String) {
+        val parsed = value.trim().toDoubleOrNull()
+        viewModelScope.launch {
+            userPreferencesRepository.update { current ->
+                current.copy(indoorTemperatureCelsius = parsed)
+            }
+        }
+    }
+
+    fun clearIndoorTemperatureOverride() {
+        viewModelScope.launch {
+            userPreferencesRepository.update { current ->
+                current.copy(indoorTemperatureCelsius = null)
+            }
         }
     }
 

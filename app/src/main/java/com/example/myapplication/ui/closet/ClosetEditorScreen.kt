@@ -38,8 +38,14 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.net.Uri
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.clickable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
@@ -107,6 +113,7 @@ fun ClosetEditorScreen(
         onThicknessSelected = viewModel::onThicknessSelected,
         onStatusSelected = viewModel::onStatusSelected,
         onSave = viewModel::onSave,
+        onImageSelected = viewModel::onImageSelected,
         modifier = modifier
     )
 }
@@ -129,6 +136,7 @@ private fun ClosetEditorContent(
     onThicknessSelected: (Thickness) -> Unit,
     onStatusSelected: (LaundryStatus) -> Unit,
     onSave: () -> Unit,
+    onImageSelected: (String?) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Scaffold(
@@ -175,26 +183,30 @@ private fun ClosetEditorContent(
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
 
-            SectionHeader(text = stringResource(id = R.string.closet_editor_section_name))
-            OutlinedTextField(
-                value = state.name,
-                onValueChange = onNameChange,
-                label = { Text(stringResource(id = R.string.closet_editor_field_name_label)) },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
-            )
+            Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SectionHeader(text = stringResource(id = R.string.closet_editor_section_name))
+                OutlinedTextField(
+                    value = state.name,
+                    onValueChange = onNameChange,
+                    label = { Text(stringResource(id = R.string.closet_editor_field_name_label)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+            }
 
-            SectionHeader(text = stringResource(id = R.string.closet_editor_section_brand))
-            OutlinedTextField(
-                value = state.brand,
-                onValueChange = onBrandChange,
-                label = { Text(stringResource(id = R.string.closet_editor_field_brand_label)) },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                supportingText = {
-                    Text(text = stringResource(id = R.string.closet_editor_field_brand_support))
-                }
-            )
+            Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SectionHeader(text = stringResource(id = R.string.closet_editor_section_brand))
+                OutlinedTextField(
+                    value = state.brand,
+                    onValueChange = onBrandChange,
+                    label = { Text(stringResource(id = R.string.closet_editor_field_brand_label)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    supportingText = {
+                        Text(text = stringResource(id = R.string.closet_editor_field_brand_support))
+                    }
+                )
+            }
 
             if (!state.isEditMode) {
                 SectionHeader(text = stringResource(id = R.string.closet_editor_section_initial_status))
@@ -243,17 +255,45 @@ private fun ClosetEditorContent(
 
             if (state.selectedCategory != null && state.selectedColor != null) {
                 SectionHeader(text = stringResource(id = R.string.closet_editor_section_preview))
-                Box(
-                    modifier = Modifier.fillMaxWidth(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    ClothingIllustrationSwatch(
-                        category = state.selectedCategory.category,
-                        colorHex = state.selectedColor.colorHex,
-                        swatchSize = 96.dp,
-                        iconSize = 64.dp
-                    )
-                }
+                            // Image import: show dialog on tap and launch picker
+                            val showImportDialog = remember { mutableStateOf(false) }
+                            val launcher = rememberLauncherForActivityResult(
+                                contract = ActivityResultContracts.GetContent()
+                            ) { uri: Uri? ->
+                                // pass URI string back via provided callback
+                                onImageSelected(uri?.toString())
+                            }
+
+                            Box(
+                                modifier = Modifier.fillMaxWidth(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                ClothingIllustrationSwatch(
+                                    category = state.selectedCategory.category,
+                                    colorHex = state.selectedColor.colorHex,
+                                    swatchSize = 96.dp,
+                                    iconSize = 64.dp,
+                                    modifier = Modifier
+                                        .clickable(onClick = { showImportDialog.value = true })
+                                )
+                            }
+
+                            if (showImportDialog.value) {
+                                androidx.compose.material3.AlertDialog(
+                                    onDismissRequest = { showImportDialog.value = false },
+                                    title = { Text(text = stringResource(id = R.string.closet_editor_import_dialog_title)) },
+                                    text = { Text(text = stringResource(id = R.string.closet_editor_import_dialog_message)) },
+                                    confirmButton = {
+                                        TextButton(onClick = {
+                                            showImportDialog.value = false
+                                            launcher.launch("image/*")
+                                        }) { Text(text = stringResource(id = R.string.common_yes)) }
+                                    },
+                                    dismissButton = {
+                                        TextButton(onClick = { showImportDialog.value = false }) { Text(text = stringResource(id = R.string.common_cancel)) }
+                                    }
+                                )
+                            }
             }
 
             if (state.selectedCategory != null) {
@@ -282,11 +322,13 @@ private fun ClosetEditorContent(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                // スライダーを1℃刻みにするため、stepsを範囲幅（ceil）から1引いた値に設定する
+                val comfortSteps = (ComfortRangeDefaults.MAX_LIMIT - ComfortRangeDefaults.MIN_LIMIT).toInt() - 1
                 RangeSlider(
                     value = state.comfortMinCelsius.toFloat()..state.comfortMaxCelsius.toFloat(),
                     onValueChange = onComfortRangeChanged,
                     valueRange = ComfortRangeDefaults.MIN_LIMIT.toFloat()..ComfortRangeDefaults.MAX_LIMIT.toFloat(),
-                    steps = 0
+                    steps = if (comfortSteps > 0) comfortSteps else 0
                 )
             }
 
@@ -349,43 +391,58 @@ private fun ClosetEditorContent(
                 label = stringResource(id = R.string.closet_editor_attribute_classification),
                 value = stringResource(id = state.type.labelResId())
             )
-            Text(
-                text = stringResource(id = R.string.closet_editor_attribute_sleeve),
-                style = MaterialTheme.typography.titleSmall
-            )
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                SleeveLength.entries
-                    .filterNot { it == SleeveLength.UNKNOWN }
-                    .forEach { length ->
-                        val selected = state.sleeveLength == length
-                        FilterChip(
-                            selected = selected,
-                            onClick = { onSleeveLengthSelected(length) },
-                            label = { Text(stringResource(id = length.labelResId())) }
-                        )
-                    }
+                Text(
+                    text = stringResource(id = R.string.closet_editor_attribute_sleeve),
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.padding(end = 8.dp)
+                )
+                FlowRow(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(0.dp)
+                ) {
+                    SleeveLength.entries
+                        .filterNot { it == SleeveLength.UNKNOWN }
+                        .forEach { length ->
+                            val selected = state.sleeveLength == length
+                            FilterChip(
+                                selected = selected,
+                                onClick = { onSleeveLengthSelected(length) },
+                                label = { Text(stringResource(id = length.labelResId())) }
+                            )
+                        }
+                }
             }
-            Text(
-                text = stringResource(id = R.string.closet_editor_attribute_thickness),
-                style = MaterialTheme.typography.titleSmall
-            )
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Thickness.entries
-                    .filterNot { it == Thickness.UNKNOWN }
-                    .forEach { thickness ->
-                        val selected = state.thickness == thickness
-                        FilterChip(
-                            selected = selected,
-                            onClick = { onThicknessSelected(thickness) },
-                            label = { Text(stringResource(id = thickness.labelResId())) }
-                        )
-                    }
+                Text(
+                    text = stringResource(id = R.string.closet_editor_attribute_thickness),
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.padding(end = 8.dp)
+                )
+                FlowRow(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(0.dp)
+                ) {
+                    Thickness.entries
+                        .filterNot { it == Thickness.UNKNOWN }
+                        .forEach { thickness ->
+                            val selected = state.thickness == thickness
+                            FilterChip(
+                                selected = selected,
+                                onClick = { onThicknessSelected(thickness) },
+                                label = { Text(stringResource(id = thickness.labelResId())) }
+                            )
+                        }
+                }
             }
             AttributeRow(
                 label = stringResource(id = R.string.closet_editor_attribute_color_group),
@@ -509,8 +566,8 @@ private fun StatusOptionCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = option.emoji,
-                    fontSize = 24.sp
+                    text = "${option.emoji} ${stringResource(id = option.titleResId)}",
+                    style = MaterialTheme.typography.titleMedium
                 )
                 if (selected) {
                     Icon(
@@ -519,10 +576,6 @@ private fun StatusOptionCard(
                     )
                 }
             }
-            Text(
-                text = stringResource(id = option.titleResId),
-                style = MaterialTheme.typography.titleMedium
-            )
             Text(
                 text = stringResource(id = option.descriptionResId),
                 style = MaterialTheme.typography.bodySmall,
@@ -601,7 +654,8 @@ private fun ClosetEditorPreview() {
             onSleeveLengthSelected = {},
             onThicknessSelected = {},
             onStatusSelected = {},
-            onSave = {}
+            onSave = {},
+            onImageSelected = {}
         )
     }
 }

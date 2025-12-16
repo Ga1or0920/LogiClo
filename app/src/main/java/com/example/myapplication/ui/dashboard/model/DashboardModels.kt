@@ -32,6 +32,7 @@ data class DashboardUiState(
     val isLoading: Boolean = true,
     val mode: TpoMode = TpoMode.CASUAL,
     val environment: EnvironmentMode = EnvironmentMode.OUTDOOR,
+    val indoorTemperatureCelsius: Double? = null,
     val suggestions: List<OutfitSuggestion> = emptyList(),
     val totalSuggestionCount: Int = 0,
     val selectionInsights: List<UiMessage> = emptyList(),

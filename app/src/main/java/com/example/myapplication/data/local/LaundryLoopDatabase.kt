@@ -19,7 +19,7 @@ import com.example.myapplication.data.local.entity.WearFeedbackEntity
         UserPreferencesEntity::class,
         WearFeedbackEntity::class
     ],
-    version = 7,
+    version = 9,
     exportSchema = false
 )
 abstract class LaundryLoopDatabase : RoomDatabase() {
@@ -90,6 +90,19 @@ abstract class LaundryLoopDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_7_8: Migration = object : Migration(7, 8) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE user_preferences ADD COLUMN indoorTemperatureCelsius REAL")
+            }
+        }
+        
+        val MIGRATION_8_9: Migration = object : Migration(8, 9) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE wear_feedback_entries ADD COLUMN topRating TEXT")
+                database.execSQL("ALTER TABLE wear_feedback_entries ADD COLUMN bottomRating TEXT")
+            }
+        }
+
         @Volatile
         private var instance: LaundryLoopDatabase? = null
 
@@ -105,12 +118,14 @@ abstract class LaundryLoopDatabase : RoomDatabase() {
                 LaundryLoopDatabase::class.java,
                 NAME
             ).addMigrations(
-                MIGRATION_1_2,
-                MIGRATION_2_3,
-                MIGRATION_3_4,
-                MIGRATION_4_5,
-                MIGRATION_5_6,
-                MIGRATION_6_7
+                    MIGRATION_1_2,
+                    MIGRATION_2_3,
+                    MIGRATION_3_4,
+                    MIGRATION_4_5,
+                    MIGRATION_5_6,
+                    MIGRATION_6_7,
+                    MIGRATION_7_8,
+                    MIGRATION_8_9
             ).build()
         }
     }

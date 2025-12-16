@@ -152,6 +152,8 @@ class WearFeedbackReminderWorker(
             wornAt = InstantCompat.ofEpochMilliOrNull(wornAtEpochMillis),
             topItemId = topItemId,
             bottomItemId = bottomItemId,
+            topRating = WearFeedbackRating.fromBackend(topRating),
+            bottomRating = WearFeedbackRating.fromBackend(bottomRating),
             rating = WearFeedbackRating.fromBackend(rating),
             notes = notes,
             submittedAt = InstantCompat.ofEpochMilliOrNull(submittedAtEpochMillis)

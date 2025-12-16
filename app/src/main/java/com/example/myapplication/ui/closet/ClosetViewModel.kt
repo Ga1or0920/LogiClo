@@ -51,6 +51,7 @@ class ClosetViewModel(
                     category = item.category,
                     categoryLabelResId = item.category.labelResId(),
                     colorHex = item.colorHex,
+                    sleeveLength = item.sleeveLength,
                     status = item.status,
                     currentWears = item.currentWears,
                     maxWears = item.maxWears,

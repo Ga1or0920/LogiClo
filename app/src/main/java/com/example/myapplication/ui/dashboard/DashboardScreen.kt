@@ -224,6 +224,8 @@ fun DashboardScreen(modifier: Modifier = Modifier) {
             onMapPickerCoordinateChanged = viewModel::onMapPickerLocationChanged,
             onMapPickerConfirm = viewModel::onMapPickerConfirmed,
             onDismissComebackDialog = viewModel::onComebackDialogDismissed,
+            onIndoorTemperatureChanged = viewModel::onIndoorTemperatureChanged,
+            onClearIndoorTemperatureOverride = viewModel::clearIndoorTemperatureOverride,
             isMapSupported = isMapSupported,
             modifier = Modifier
                 .fillMaxSize()
@@ -266,6 +268,8 @@ private fun DashboardContent(
     onMapPickerCoordinateChanged: (Double, Double) -> Unit,
     onMapPickerConfirm: () -> Unit,
     onDismissComebackDialog: () -> Unit,
+    onIndoorTemperatureChanged: (String) -> Unit,
+    onClearIndoorTemperatureOverride: () -> Unit,
     isMapSupported: Boolean,
     modifier: Modifier = Modifier
 ) {
@@ -303,6 +307,7 @@ private fun DashboardContent(
                 currentMode = state.mode,
                 currentEnvironment = state.environment,
                 destination = mainMenuDestination,
+                indoorTemperature = state.indoorTemperatureCelsius,
                 onModeSelected = onModeSelected,
                 onEnvironmentSelected = onEnvironmentSelected,
                 onDestinationChanged = { mainMenuDestination = it },
@@ -317,7 +322,9 @@ private fun DashboardContent(
                 onCancel = {
                     isMainMenuVisible = false
                 },
-                onDismiss = { isMainMenuVisible = false }
+                onDismiss = { isMainMenuVisible = false },
+                onIndoorTemperatureChanged = onIndoorTemperatureChanged,
+                onClearIndoorTemperatureOverride = onClearIndoorTemperatureOverride
             )
         }
     }
@@ -689,6 +696,9 @@ private fun MainMenuDialog(
     currentMode: TpoMode,
     currentEnvironment: EnvironmentMode,
     destination: String,
+    indoorTemperature: Double?,
+    onIndoorTemperatureChanged: (String) -> Unit,
+    onClearIndoorTemperatureOverride: () -> Unit,
     onModeSelected: (TpoMode) -> Unit,
     onEnvironmentSelected: (EnvironmentMode) -> Unit,
     onDestinationChanged: (String) -> Unit,
@@ -720,6 +730,9 @@ private fun MainMenuDialog(
                     currentMode = currentMode,
                     currentEnvironment = currentEnvironment,
                     destination = destination,
+                    indoorTemperature = indoorTemperature,
+                    onIndoorTemperatureChanged = onIndoorTemperatureChanged,
+                    onClearIndoorTemperatureOverride = onClearIndoorTemperatureOverride,
                     onModeSelected = onModeSelected,
                     onEnvironmentSelected = onEnvironmentSelected,
                     onDestinationChanged = onDestinationChanged,
@@ -745,7 +758,10 @@ private fun MainMenuContent(
         currentMode: TpoMode,
         currentEnvironment: EnvironmentMode,
         destination: String,
-        onModeSelected: (TpoMode) -> Unit,
+    indoorTemperature: Double?,
+    onIndoorTemperatureChanged: (String) -> Unit,
+    onClearIndoorTemperatureOverride: () -> Unit,
+    onModeSelected: (TpoMode) -> Unit,
         onEnvironmentSelected: (EnvironmentMode) -> Unit,
         onDestinationChanged: (String) -> Unit,
         onDestinationSearchRequested: (String) -> Unit,
@@ -800,6 +816,29 @@ private fun MainMenuContent(
                         selected = currentEnvironment == EnvironmentMode.INDOOR,
                         onClick = { onEnvironmentSelected(EnvironmentMode.INDOOR) }
                     )
+                }
+                if (currentEnvironment == EnvironmentMode.INDOOR) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        var input by remember { mutableStateOf(indoorTemperature?.let { String.format(Locale.JAPAN, "%.1f", it) } ?: "") }
+                        OutlinedTextField(
+                            value = input,
+                            onValueChange = {
+                                input = it
+                                onIndoorTemperatureChanged(it)
+                            },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                            placeholder = { Text(text = stringResource(id = R.string.main_menu_indoor_temperature_placeholder)) },
+                            keyboardOptions = KeyboardOptions.Default.copy(keyboardType = KeyboardType.Number)
+                        )
+                        TextButton(onClick = { input = ""; onClearIndoorTemperatureOverride() }) {
+                            Text(text = stringResource(id = R.string.main_menu_indoor_temperature_clear))
+                        }
+                    }
                 }
             }
 
@@ -2056,6 +2095,8 @@ private fun DashboardScreenPreview() {
                 onMapPickerCoordinateChanged = { _, _ -> },
                 onMapPickerConfirm = {},
                 onDismissComebackDialog = {},
+                onIndoorTemperatureChanged = {},
+                onClearIndoorTemperatureOverride = {},
                 isMapSupported = true
             )
         }

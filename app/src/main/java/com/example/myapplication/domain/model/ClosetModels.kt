@@ -20,6 +20,8 @@ enum class ClothingCategory(val backendValue: String) {
     COAT("coat"),
     INNER("inner"),
     JACKET("jacket"),
+    FLEECE("fleece"),
+    WINDBREAKER("windbreaker"),
     UNKNOWN("unknown");
 
     companion object {

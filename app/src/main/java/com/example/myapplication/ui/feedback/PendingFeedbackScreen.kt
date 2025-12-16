@@ -7,11 +7,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+
 import androidx.compose.material3.Text
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
@@ -43,8 +44,10 @@ fun PendingFeedbackRoute(
     onUpdateThreshold: (String, Int) -> Unit = { _, _ -> }
 ) {
     val context = LocalContext.current
-    var selectedFeeling by remember { mutableStateOf<String?>(null) }
-    var showConfirm by remember { mutableStateOf(false) }
+    
+    var topSelection by remember { mutableStateOf<com.example.myapplication.domain.model.WearFeedbackRating?>(null) }
+    var bottomSelection by remember { mutableStateOf<com.example.myapplication.domain.model.WearFeedbackRating?>(null) }
+    
     val appContainer = LocalAppContainer.current
     val scope = rememberCoroutineScope()
 
@@ -86,115 +89,106 @@ fun PendingFeedbackRoute(
             }
         }
 
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Button(
-                onClick = {
-                    selectedFeeling = "hot"
-                    showConfirm = true
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(text = "🥵 暑かった")
-            }
+        
 
-            OutlinedButton(
-                onClick = {
-                    selectedFeeling = "ok"
-                    showConfirm = true
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(text = "🙂 ちょうど良かった")
-            }
+        // Per-part rating controls
+        Card(modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium) {
+            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                displayName.let { name ->
+                    Text(text = name, style = MaterialTheme.typography.titleMedium)
+                }
+                // Top
+                Text(text = "トップ", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    val topWarmSelected = topSelection == com.example.myapplication.domain.model.WearFeedbackRating.TOO_WARM
+                    val topJustSelected = topSelection == com.example.myapplication.domain.model.WearFeedbackRating.JUST_RIGHT
+                    val topColdSelected = topSelection == com.example.myapplication.domain.model.WearFeedbackRating.TOO_COLD
 
-            OutlinedButton(
-                onClick = {
-                    selectedFeeling = "cold"
-                    showConfirm = true
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(text = "🥶 寒かった")
+                    Button(
+                        onClick = { topSelection = com.example.myapplication.domain.model.WearFeedbackRating.TOO_WARM },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (topWarmSelected) MaterialTheme.colorScheme.primary else Color.White,
+                            contentColor = if (topWarmSelected) Color.White else MaterialTheme.colorScheme.onSurface
+                        )
+                    ) { Text(text = "暑い 🥵") }
+
+                    Button(
+                        onClick = { topSelection = com.example.myapplication.domain.model.WearFeedbackRating.JUST_RIGHT },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (topJustSelected) MaterialTheme.colorScheme.primary else Color.White,
+                            contentColor = if (topJustSelected) Color.White else MaterialTheme.colorScheme.onSurface
+                        )
+                    ) { Text(text = "普通 🙂") }
+
+                    Button(
+                        onClick = { topSelection = com.example.myapplication.domain.model.WearFeedbackRating.TOO_COLD },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (topColdSelected) MaterialTheme.colorScheme.primary else Color.White,
+                            contentColor = if (topColdSelected) Color.White else MaterialTheme.colorScheme.onSurface
+                        )
+                    ) { Text(text = "寒い 🥶") }
+                }
+                // Bottom
+                Text(text = "ボトムス", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    val bottomWarmSelected = bottomSelection == com.example.myapplication.domain.model.WearFeedbackRating.TOO_WARM
+                    val bottomJustSelected = bottomSelection == com.example.myapplication.domain.model.WearFeedbackRating.JUST_RIGHT
+                    val bottomColdSelected = bottomSelection == com.example.myapplication.domain.model.WearFeedbackRating.TOO_COLD
+
+                    Button(
+                        onClick = { bottomSelection = com.example.myapplication.domain.model.WearFeedbackRating.TOO_WARM },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (bottomWarmSelected) MaterialTheme.colorScheme.primary else Color.White,
+                            contentColor = if (bottomWarmSelected) Color.White else MaterialTheme.colorScheme.onSurface
+                        )
+                    ) { Text(text = "暑い 🥵") }
+
+                    Button(
+                        onClick = { bottomSelection = com.example.myapplication.domain.model.WearFeedbackRating.JUST_RIGHT },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (bottomJustSelected) MaterialTheme.colorScheme.primary else Color.White,
+                            contentColor = if (bottomJustSelected) Color.White else MaterialTheme.colorScheme.onSurface
+                        )
+                    ) { Text(text = "普通 🙂") }
+
+                    Button(
+                        onClick = { bottomSelection = com.example.myapplication.domain.model.WearFeedbackRating.TOO_COLD },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (bottomColdSelected) MaterialTheme.colorScheme.primary else Color.White,
+                            contentColor = if (bottomColdSelected) Color.White else MaterialTheme.colorScheme.onSurface
+                        )
+                    ) { Text(text = "寒い 🥶") }
+                }
+
+                // notes removed per UX request
             }
+        }
+
+        // Submit button
+        Button(onClick = {
+            // submit per-part ratings
+            val repo = appContainer.wearFeedbackRepository
+            scope.launch {
+                try {
+                    itemId?.let { id ->
+                        repo.submitFeedback(id, topSelection, bottomSelection, null)
+                    }
+                    Toast.makeText(context, "フィードバックを送信しました", Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) {
+                    Toast.makeText(context, "送信に失敗しました: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+                navController.popBackStack()
+            }
+        }, modifier = Modifier.fillMaxWidth()) {
+            Text(text = "送信する")
         }
     }
 
-    if (showConfirm && selectedFeeling != null) {
-        // ダイアログの内容は選択内容に応じて分岐する
-        AlertDialog(
-            onDismissRequest = { showConfirm = false },
-            title = {
-                Text(
-                    text = when (selectedFeeling) {
-                        "hot" -> "${displayName}の設定を更新しますか？"
-                        "cold" -> "${displayName}は寒かったと記録しますか？"
-                        else -> "${displayName}のフィードバックを記録しますか？"
-                    }
-                )
-            },
-            text = {
-                Text(
-                    text = when (selectedFeeling) {
-                        "hot" -> "${displayName}の適正上限を ${currentMax}℃ → ${suggestedHotLimit}℃ に下げますか？"
-                        "cold" -> "${displayName}の適正下限を ${currentMin}℃ → ${suggestedColdLimit}℃ に上げますか？"
-                        else -> "${displayName}がちょうど良かったと記録します。"
-                    }
-                )
-            },
-            confirmButton = {
-                Button(onClick = {
-                    showConfirm = false
-                    itemId?.let { id ->
-                        // リポジトリ経由でアイテムの快適温度帯を更新
-                        if (selectedFeeling == "hot") {
-                            scope.launch {
-                                try {
-                                    val repo = appContainer.closetRepository
-                                    val item = repo.getItem(id)
-                                    if (item != null) {
-                                        val updated = item.copy(comfortMaxCelsius = suggestedHotLimit.toDouble())
-                                        repo.upsert(updated)
-                                    }
-                                    onUpdateThreshold(id, suggestedHotLimit)
-                                } catch (e: Exception) {
-                                    Toast.makeText(context, "更新に失敗しました: ${e.message}", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        } else if (selectedFeeling == "cold") {
-                            scope.launch {
-                                try {
-                                    val repo = appContainer.closetRepository
-                                    val item = repo.getItem(id)
-                                    if (item != null) {
-                                        val updated = item.copy(comfortMinCelsius = suggestedColdLimit.toDouble())
-                                        repo.upsert(updated)
-                                    }
-                                    onUpdateThreshold(id, suggestedColdLimit)
-                                } catch (e: Exception) {
-                                    Toast.makeText(context, "更新に失敗しました: ${e.message}", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        } else {
-                            // 他の選択肢は現状は記録のみ（トーストで完了表示）
-                            Toast.makeText(context, "ありがとうございます（記録されました）", Toast.LENGTH_SHORT).show()
-                        }
-                    } ?: run {
-                        // itemId がない場合は単に記録完了メッセージ
-                        Toast.makeText(context, "ありがとうございます（記録されました）", Toast.LENGTH_SHORT).show()
-                    }
-                    navController.popBackStack()
-                }) {
-                    Text(text = "記録する")
-                }
-            },
-            dismissButton = {
-                OutlinedButton(onClick = { showConfirm = false }) {
-                    Text(text = "やめる")
-                }
-            }
-        )
-    }
+    
 }

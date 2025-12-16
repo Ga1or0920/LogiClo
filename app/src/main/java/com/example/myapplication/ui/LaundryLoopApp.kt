@@ -28,12 +28,18 @@ import com.example.myapplication.ui.providers.ProvideAppContainer
 import com.example.myapplication.ui.providers.rememberAppContainer
 import com.example.myapplication.ui.settings.SettingsRoute
 import com.example.myapplication.ui.feedback.PendingFeedbackRoute
+import com.example.myapplication.ui.feedback.FeedbackDestinations
 
 /**
  * アプリ全体のナビゲーションと共通 UI フレームを司るコンポーザブル。
  */
 @Composable
-fun LaundryLoopApp(navController: NavHostController, startDestination: String? = null) {
+fun LaundryLoopApp(
+    navController: NavHostController,
+    startDestination: String? = null,
+    initialTargetDestination: String? = null,
+    initialTargetItemId: String? = null
+) {
     val appContainer = rememberAppContainer()
     val appState = rememberLaundryLoopAppState(navController)
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
@@ -118,6 +124,26 @@ fun LaundryLoopApp(navController: NavHostController, startDestination: String? =
                     PendingFeedbackRoute(navController = navController, itemId = itemId, onUpdateThreshold = { itemId, newLimit ->
                         // 実稼働ではViewModel/Repositoryへ更新を委譲
                     })
+                }
+            }
+            // 起動インテントからの遷移処理（startDestination は nav graph のルート名であり、
+            // 実際のパラメータ付きパスを直接渡すと一致しないため、ここで navigate を実行する）
+            androidx.compose.runtime.LaunchedEffect(initialTargetDestination, initialTargetItemId) {
+                if (!initialTargetDestination.isNullOrBlank()) {
+                    val route = if (initialTargetDestination == FeedbackDestinations.Pending && !initialTargetItemId.isNullOrBlank()) {
+                        "${initialTargetDestination}/${initialTargetItemId}"
+                    } else {
+                        initialTargetDestination
+                    }
+                    try {
+                        navController.navigate(route) {
+                            popUpTo(navController.graph.startDestinationId) { inclusive = false }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    } catch (_: Exception) {
+                        // ナビゲーションに失敗した場合は無視（例えば route が未登録の場合）
+                    }
                 }
             }
         }

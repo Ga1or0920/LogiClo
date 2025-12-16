@@ -17,9 +17,11 @@ data class WearFeedbackEntry(
     val wornAt: Instant?,
     val topItemId: String?,
     val bottomItemId: String?,
+    val topRating: WearFeedbackRating?,
+    val bottomRating: WearFeedbackRating?,
     val rating: WearFeedbackRating?,
     val notes: String?,
     val submittedAt: Instant?
 ) {
-    val isPending: Boolean get() = rating == null
+    val isPending: Boolean get() = (rating == null) && (topRating == null && bottomRating == null)
 }

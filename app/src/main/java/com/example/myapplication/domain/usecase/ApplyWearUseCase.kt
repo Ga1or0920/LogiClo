@@ -47,7 +47,8 @@ class ApplyWearUseCase(
         val highHeat = weather.maxTemperatureCelsius >= 26.0 || weather.humidityPercent >= 70
         val weatherSensitiveCategory = item.category != ClothingCategory.INNER && item.category != ClothingCategory.T_SHIRT
         if (highHeat && weatherSensitiveCategory) {
-            return DamageResult(2, WearReason.HEAT_SWEAT)
+            // On extreme heat days, force move to laundry regardless of remaining wears
+            return DamageResult(FORCE_DIRTY_DAMAGE, WearReason.HEAT_SWEAT)
         }
 
         return DamageResult(1, null)

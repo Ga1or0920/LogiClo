@@ -18,7 +18,8 @@ data class UserPreferences(
     val tempOffsets: Map<Thickness, Int> = emptyMap(),
     val colorRules: ColorRules = ColorRules(),
     val defaultMaxWears: Map<ClothingCategory, Int> = emptyMap(),
-    val weatherLocationOverride: WeatherLocationOverride? = null
+    val weatherLocationOverride: WeatherLocationOverride? = null,
+    val indoorTemperatureCelsius: Double? = null
 )
 
 enum class TpoMode(val backendValue: String) {

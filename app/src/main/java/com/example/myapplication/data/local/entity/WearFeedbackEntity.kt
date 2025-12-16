@@ -10,6 +10,8 @@ data class WearFeedbackEntity(
     val topItemId: String?,
     val bottomItemId: String?,
     val rating: String?,
+    val topRating: String? = null,
+    val bottomRating: String? = null,
     val notes: String?,
     val submittedAtEpochMillis: Long?
 )

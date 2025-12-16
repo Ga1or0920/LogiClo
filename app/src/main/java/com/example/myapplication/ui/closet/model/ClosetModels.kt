@@ -20,6 +20,7 @@ data class ClosetItemUi(
     val category: ClothingCategory,
     @param:StringRes val categoryLabelResId: Int,
     val colorHex: String,
+    val sleeveLength: SleeveLength,
     val status: LaundryStatus,
     val currentWears: Int,
     val maxWears: Int,
@@ -78,6 +79,8 @@ data class ClosetEditorUiState(
     val availableCategories: List<CategoryOption> = emptyList(),
     val availableColors: List<ColorOption> = emptyList(),
     val isEditMode: Boolean = false
+    ,
+    val imageUrl: String? = null
 ) {
     val canSave: Boolean
         get() = name.isNotBlank() && selectedCategory != null && selectedColor != null && !isSaving

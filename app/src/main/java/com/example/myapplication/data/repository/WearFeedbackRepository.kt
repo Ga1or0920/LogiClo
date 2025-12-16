@@ -8,6 +8,11 @@ interface WearFeedbackRepository {
     fun observeLatestPending(): Flow<WearFeedbackEntry?>
     suspend fun getLatestPending(): WearFeedbackEntry?
     suspend fun recordWear(topItemId: String?, bottomItemId: String?)
-    suspend fun submitFeedback(entryId: String, rating: WearFeedbackRating, notes: String?)
+    suspend fun submitFeedback(
+        entryId: String,
+        topRating: WearFeedbackRating?,
+        bottomRating: WearFeedbackRating?,
+        notes: String?
+    )
     suspend fun pruneHistory(beforeEpochMillis: Long)
 }

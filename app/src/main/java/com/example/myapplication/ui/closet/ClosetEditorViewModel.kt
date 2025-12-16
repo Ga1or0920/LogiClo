@@ -237,6 +237,12 @@ class ClosetEditorViewModel(
         }
     }
 
+    fun onImageSelected(uriString: String?) {
+        _uiState.update { state ->
+            state.copy(imageUrl = uriString)
+        }
+    }
+
     private fun resolveInitialAlwaysWash(option: CategoryOption): Boolean {
         val learned = learnedDefaultMaxWears[option.category]
         return option.defaultAlwaysWash || (learned ?: option.defaultMaxWears) <= 1
@@ -283,7 +289,8 @@ class ClosetEditorViewModel(
                 isAlwaysWash = state.isAlwaysWash,
                 cleaningType = state.cleaningType,
                 brand = brand,
-                status = targetStatus
+                status = targetStatus,
+                imageUrl = state.imageUrl ?: existing.imageUrl
             )
             editingItem = updated
             updated
@@ -310,7 +317,7 @@ class ClosetEditorViewModel(
                 cleaningType = state.cleaningType,
                 status = targetStatus,
                 brand = brand,
-                imageUrl = null,
+                imageUrl = state.imageUrl,
                 lastWornDate = null
             )
         }
@@ -347,6 +354,7 @@ class ClosetEditorViewModel(
                 thickness = item.thickness,
                 pattern = item.pattern,
                 status = item.status,
+                imageUrl = item.imageUrl,
                 comfortMinCelsius = comfortMin,
                 comfortMaxCelsius = comfortMax,
                 isComfortRangeCustomized = isCustomComfortRange(item, recommendedRange),
@@ -511,6 +519,7 @@ private data class DuplicateNumberingResult(
 )
 
 internal fun closetCategoryOptions(): List<CategoryOption> = listOf(
+    // Tops
     CategoryOption(
         category = ClothingCategory.T_SHIRT,
         labelResId = R.string.clothing_category_t_shirt,
@@ -561,6 +570,20 @@ internal fun closetCategoryOptions(): List<CategoryOption> = listOf(
         defaultMaxWears = 3,
         defaultAlwaysWash = false
     ),
+
+    // Inner
+    CategoryOption(
+        category = ClothingCategory.INNER,
+        labelResId = R.string.clothing_category_inner,
+        type = ClothingType.INNER,
+        defaultSleeve = SleeveLength.NONE,
+        defaultThickness = Thickness.THIN,
+        defaultCleaning = CleaningType.HOME,
+        defaultMaxWears = 3,
+        defaultAlwaysWash = true
+    ),
+
+    // Bottoms
     CategoryOption(
         category = ClothingCategory.DENIM,
         labelResId = R.string.clothing_category_denim,
@@ -591,14 +614,46 @@ internal fun closetCategoryOptions(): List<CategoryOption> = listOf(
         defaultMaxWears = 6,
         defaultAlwaysWash = false
     ),
+
+    // Outers
+    CategoryOption(
+        category = ClothingCategory.JACKET,
+        labelResId = R.string.clothing_category_jacket,
+        type = ClothingType.OUTER,
+        defaultSleeve = SleeveLength.LONG,
+        defaultThickness = Thickness.THICK,
+        defaultCleaning = CleaningType.DRY,
+        defaultMaxWears = 5,
+        defaultAlwaysWash = false
+    ),
     CategoryOption(
         category = ClothingCategory.OUTER_LIGHT,
         labelResId = R.string.clothing_category_outer_light,
         type = ClothingType.OUTER,
         defaultSleeve = SleeveLength.LONG,
         defaultThickness = Thickness.NORMAL,
-        defaultCleaning = CleaningType.DRY,
-        defaultMaxWears = 8,
+        defaultCleaning = CleaningType.HOME,
+        defaultMaxWears = 4,
+        defaultAlwaysWash = false
+    ),
+    CategoryOption(
+        category = ClothingCategory.FLEECE,
+        labelResId = R.string.clothing_category_fleece,
+        type = ClothingType.OUTER,
+        defaultSleeve = SleeveLength.LONG,
+        defaultThickness = Thickness.NORMAL,
+        defaultCleaning = CleaningType.HOME,
+        defaultMaxWears = 4,
+        defaultAlwaysWash = false
+    ),
+    CategoryOption(
+        category = ClothingCategory.WINDBREAKER,
+        labelResId = R.string.clothing_category_windbreaker,
+        type = ClothingType.OUTER,
+        defaultSleeve = SleeveLength.LONG,
+        defaultThickness = Thickness.THIN,
+        defaultCleaning = CleaningType.HOME,
+        defaultMaxWears = 6,
         defaultAlwaysWash = false
     ),
     CategoryOption(
@@ -621,31 +676,34 @@ internal fun closetCategoryOptions(): List<CategoryOption> = listOf(
         defaultMaxWears = 6,
         defaultAlwaysWash = false
     ),
-    CategoryOption(
-        category = ClothingCategory.JACKET,
-        labelResId = R.string.clothing_category_jacket,
-        type = ClothingType.OUTER,
-        defaultSleeve = SleeveLength.LONG,
-        defaultThickness = Thickness.THICK,
-        defaultCleaning = CleaningType.DRY,
-        defaultMaxWears = 5,
-        defaultAlwaysWash = false
-    )
 )
 
 internal fun closetColorOptions(): List<ColorOption> = listOf(
     ColorOption(colorHex = "#000000", labelResId = R.string.closet_color_black, group = ColorGroup.MONOTONE),
     ColorOption(colorHex = "#1F2933", labelResId = R.string.closet_color_charcoal, group = ColorGroup.MONOTONE),
     ColorOption(colorHex = "#FFFFFF", labelResId = R.string.closet_color_white, group = ColorGroup.MONOTONE),
+    ColorOption(colorHex = "#808080", labelResId = R.string.closet_color_gray, group = ColorGroup.MONOTONE),
+
     ColorOption(colorHex = "#0D3B66", labelResId = R.string.closet_color_navy, group = ColorGroup.NAVY_BLUE),
     ColorOption(colorHex = "#1C3F95", labelResId = R.string.closet_color_blue, group = ColorGroup.NAVY_BLUE),
-    ColorOption(colorHex = "#D2B48C", labelResId = R.string.closet_color_beige, group = ColorGroup.EARTH_TONE),
-    ColorOption(colorHex = "#8B5E3C", labelResId = R.string.closet_color_brown, group = ColorGroup.EARTH_TONE),
-    ColorOption(colorHex = "#556B2F", labelResId = R.string.closet_color_olive, group = ColorGroup.EARTH_TONE),
-    ColorOption(colorHex = "#B22222", labelResId = R.string.closet_color_red, group = ColorGroup.VIVID),
-    ColorOption(colorHex = "#FFA500", labelResId = R.string.closet_color_orange, group = ColorGroup.VIVID),
-    ColorOption(colorHex = "#32CD32", labelResId = R.string.closet_color_lime, group = ColorGroup.VIVID),
     ColorOption(colorHex = "#87CEEB", labelResId = R.string.closet_color_sky, group = ColorGroup.PASTEL),
     ColorOption(colorHex = "#E6E6FA", labelResId = R.string.closet_color_lavender, group = ColorGroup.PASTEL),
-    ColorOption(colorHex = "#808080", labelResId = R.string.closet_color_gray, group = ColorGroup.MONOTONE)
+
+    ColorOption(colorHex = "#D2B48C", labelResId = R.string.closet_color_beige, group = ColorGroup.EARTH_TONE),
+    ColorOption(colorHex = "#D4A017", labelResId = R.string.closet_color_mustard, group = ColorGroup.EARTH_TONE),
+    ColorOption(colorHex = "#8B5E3C", labelResId = R.string.closet_color_brown, group = ColorGroup.EARTH_TONE),
+    ColorOption(colorHex = "#556B2F", labelResId = R.string.closet_color_olive, group = ColorGroup.EARTH_TONE),
+
+    ColorOption(colorHex = "#008000", labelResId = R.string.closet_color_green, group = ColorGroup.VIVID),
+    ColorOption(colorHex = "#32CD32", labelResId = R.string.closet_color_lime, group = ColorGroup.VIVID),
+    ColorOption(colorHex = "#008080", labelResId = R.string.closet_color_teal, group = ColorGroup.NAVY_BLUE),
+
+    ColorOption(colorHex = "#B22222", labelResId = R.string.closet_color_red, group = ColorGroup.VIVID),
+    ColorOption(colorHex = "#800020", labelResId = R.string.closet_color_wine, group = ColorGroup.VIVID),
+    ColorOption(colorHex = "#FFC0CB", labelResId = R.string.closet_color_pink, group = ColorGroup.PASTEL),
+    ColorOption(colorHex = "#800080", labelResId = R.string.closet_color_purple, group = ColorGroup.VIVID),
+
+    ColorOption(colorHex = "#FFA500", labelResId = R.string.closet_color_orange, group = ColorGroup.VIVID),
+    ColorOption(colorHex = "#FFD700", labelResId = R.string.closet_color_yellow, group = ColorGroup.VIVID),
+    ColorOption(colorHex = "#C0C0C0", labelResId = R.string.closet_color_silver, group = ColorGroup.MONOTONE)
 )

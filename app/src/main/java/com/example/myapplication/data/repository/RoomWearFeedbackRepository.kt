@@ -35,12 +35,14 @@ class RoomWearFeedbackRepository(
         dao.upsert(entity)
     }
 
-    override suspend fun submitFeedback(entryId: String, rating: WearFeedbackRating, notes: String?) {
+    override suspend fun submitFeedback(entryId: String, topRating: WearFeedbackRating?, bottomRating: WearFeedbackRating?, notes: String?) {
         val submittedMillis = InstantCompat.nowOrNull()?.let(InstantCompat::toEpochMilliOrNull)
             ?: System.currentTimeMillis()
         dao.updateSubmission(
             id = entryId,
-            rating = rating.backendValue,
+            rating = null,
+            topRating = topRating?.backendValue,
+            bottomRating = bottomRating?.backendValue,
             notes = notes?.takeIf { it.isNotBlank() },
             submittedAtEpochMillis = submittedMillis
         )
@@ -57,6 +59,8 @@ private fun WearFeedbackEntity.toDomain(): WearFeedbackEntry {
         wornAt = InstantCompat.ofEpochMilliOrNull(wornAtEpochMillis),
         topItemId = topItemId,
         bottomItemId = bottomItemId,
+        topRating = WearFeedbackRating.fromBackend(topRating),
+        bottomRating = WearFeedbackRating.fromBackend(bottomRating),
         rating = WearFeedbackRating.fromBackend(rating),
         notes = notes,
         submittedAt = InstantCompat.ofEpochMilliOrNull(submittedAtEpochMillis)

@@ -5,6 +5,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -35,6 +36,8 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.RadioButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -251,10 +254,12 @@ private fun ClosetFilterDialog(
         title = { Text(text = stringResource(id = R.string.closet_filter_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                val categoryOptions = availableCategories.map { category ->
-                    category to stringResource(id = category.labelResId())
-                }
-                FilterOptionGroup(
+                val masterOrder = closetCategoryOptions().map { it.category }
+                val categoryOptions = masterOrder
+                    .filter { it != ClothingCategory.UNKNOWN }
+                    .filter { it in availableCategories }
+                    .map { category -> category to stringResource(id = category.labelResId()) }
+                DropdownOptionGroup(
                     label = stringResource(id = R.string.closet_filter_category),
                     options = categoryOptions,
                     selectedOption = selectedCategory,
@@ -265,7 +270,7 @@ private fun ClosetFilterDialog(
                 val typeOptions = availableTypes.map { type ->
                     type to stringResource(id = type.labelResId())
                 }
-                FilterOptionGroup(
+                DropdownOptionGroup(
                     label = stringResource(id = R.string.closet_filter_type),
                     options = typeOptions,
                     selectedOption = selectedType,
@@ -276,7 +281,7 @@ private fun ClosetFilterDialog(
                 val colorGroupOptions = availableColorGroups.map { colorGroup ->
                     colorGroup to stringResource(id = colorGroup.labelResId())
                 }
-                FilterOptionGroup(
+                DropdownOptionGroup(
                     label = stringResource(id = R.string.closet_filter_color_group),
                     options = colorGroupOptions,
                     selectedOption = selectedColorGroup,
@@ -328,20 +333,47 @@ private fun <T> FilterOptionGroup(
     onOptionSelected: (T?) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Deprecated: replaced by DropdownOptionGroup. Keep for compatibility but delegate to dropdown implementation.
+    DropdownOptionGroup(
+        label = label,
+        options = options,
+        selectedOption = selectedOption,
+        onOptionSelected = onOptionSelected,
+        modifier = modifier
+    )
+}
+
+@Composable
+private fun <T> DropdownOptionGroup(
+    label: String,
+    options: List<Pair<T, String>>,
+    selectedOption: T?,
+    onOptionSelected: (T?) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val displayText = selectedOption?.let { sel ->
+        options.firstOrNull { it.first == sel }?.second ?: stringResource(id = R.string.closet_filter_all)
+    } ?: stringResource(id = R.string.closet_filter_all)
+
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(text = label, style = MaterialTheme.typography.titleSmall)
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            FilterOptionRow(
-                text = stringResource(id = R.string.closet_filter_all),
-                selected = selectedOption == null,
-                onClick = { onOptionSelected(null) }
-            )
-            options.forEach { (option, labelText) ->
-                FilterOptionRow(
-                    text = labelText,
-                    selected = selectedOption == option,
-                    onClick = { onOptionSelected(option) }
-                )
+        // Button that shows current selection and opens menu
+        Box {
+            TextButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
+                Text(text = displayText, style = MaterialTheme.typography.bodyMedium)
+            }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                DropdownMenuItem(text = { Text(text = stringResource(id = R.string.closet_filter_all)) }, onClick = {
+                    onOptionSelected(null)
+                    expanded = false
+                })
+                options.forEach { (option, labelText) ->
+                    DropdownMenuItem(text = { Text(text = labelText) }, onClick = {
+                        onOptionSelected(option)
+                        expanded = false
+                    })
+                }
             }
         }
     }
@@ -408,6 +440,12 @@ private fun ClosetItemCard(
                     }
                     Text(
                         text = stringResource(id = item.categoryLabelResId),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    // 袖丈を表示
+                    Text(
+                        text = stringResource(id = item.sleeveLength.labelResId()),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -495,6 +533,7 @@ private fun ClosetScreenPreview() {
                     category = it.category,
                     categoryLabelResId = it.category.labelResId(),
                     colorHex = it.colorHex,
+                    sleeveLength = it.sleeveLength,
                     status = it.status,
                     currentWears = it.currentWears,
                     maxWears = it.maxWears,

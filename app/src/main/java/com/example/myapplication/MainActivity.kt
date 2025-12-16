@@ -24,13 +24,29 @@ class MainActivity : ComponentActivity() {
         val targetDestination = intent.getStringExtra(EXTRA_TARGET_DESTINATION)
         val targetItemId = intent.getStringExtra(EXTRA_TARGET_ITEM_ID)
         setContent {
-            MyApplicationTheme {
-                        val controller = rememberNavController()
-                        navController = controller
-                        val startDest = if (targetDestination == FeedbackDestinations.Pending && !targetItemId.isNullOrBlank()) {
-                            "${targetDestination}/${targetItemId}"
-                        } else targetDestination
-                        LaundryLoopApp(navController = controller, startDestination = startDest)
+            val appContainer = com.example.myapplication.ui.providers.rememberAppContainer()
+            val themeState = androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(com.example.myapplication.ui.theme.ThemePreference.SYSTEM) }
+            val darkTheme = when (themeState.value) {
+                com.example.myapplication.ui.theme.ThemePreference.LIGHT -> false
+                com.example.myapplication.ui.theme.ThemePreference.DARK -> true
+                com.example.myapplication.ui.theme.ThemePreference.SYSTEM -> androidx.compose.foundation.isSystemInDarkTheme()
+                else -> androidx.compose.foundation.isSystemInDarkTheme()
+            }
+
+            com.example.myapplication.ui.theme.MyApplicationTheme(darkTheme = darkTheme) {
+                androidx.compose.runtime.CompositionLocalProvider(
+                    com.example.myapplication.ui.providers.LocalAppContainer provides appContainer,
+                    com.example.myapplication.ui.theme.LocalThemePreference provides themeState
+                ) {
+                    val controller = rememberNavController()
+                    navController = controller
+                    LaundryLoopApp(
+                        navController = controller,
+                        startDestination = null,
+                        initialTargetDestination = targetDestination,
+                        initialTargetItemId = targetItemId
+                    )
+                }
             }
         }
     }

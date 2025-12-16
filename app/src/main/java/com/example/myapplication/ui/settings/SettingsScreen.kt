@@ -129,7 +129,8 @@ fun SettingsScreen(
 	var username by rememberSaveable { mutableStateOf("") }
 	var password by rememberSaveable { mutableStateOf("") }
 	var isPasswordVisible by rememberSaveable { mutableStateOf(false) }
-	var selectedTheme by rememberSaveable { mutableStateOf(SettingsThemeOption.SYSTEM) }
+	val themeState = com.example.myapplication.ui.theme.LocalThemePreference.current
+	var selectedTheme by rememberSaveable { mutableStateOf(PreferenceToSettingsThemeOption(themeState.value)) }
 	var notificationsEnabled by rememberSaveable { mutableStateOf(true) }
 	var isDebugEnabled by rememberSaveable(hasDebugContent) { mutableStateOf(hasDebugContent) }
 
@@ -226,7 +227,10 @@ fun SettingsScreen(
 		item {
 			ThemeSelectorRow(
 				selected = selectedTheme,
-				onSelected = { selectedTheme = it }
+				onSelected = {
+					selectedTheme = it
+					themeState.value = SettingsThemeOptionToPreference(it)
+				}
 			)
 		}
 		item {
@@ -418,10 +422,26 @@ private fun ThemeSelectorRow(
 	}
 }
 
+private fun SettingsThemeOptionToPreference(option: SettingsThemeOption): com.example.myapplication.ui.theme.ThemePreference {
+	return when(option) {
+		SettingsThemeOption.LIGHT -> com.example.myapplication.ui.theme.ThemePreference.LIGHT
+		SettingsThemeOption.DARK -> com.example.myapplication.ui.theme.ThemePreference.DARK
+		SettingsThemeOption.SYSTEM -> com.example.myapplication.ui.theme.ThemePreference.SYSTEM
+	}
+}
+
+private fun PreferenceToSettingsThemeOption(pref: com.example.myapplication.ui.theme.ThemePreference): SettingsThemeOption {
+	return when(pref) {
+		com.example.myapplication.ui.theme.ThemePreference.LIGHT -> SettingsThemeOption.LIGHT
+		com.example.myapplication.ui.theme.ThemePreference.DARK -> SettingsThemeOption.DARK
+		com.example.myapplication.ui.theme.ThemePreference.SYSTEM -> SettingsThemeOption.SYSTEM
+	}
+}
+
 private enum class SettingsThemeOption(@StringRes val labelRes: Int) {
-    LIGHT(R.string.settings_theme_light),
-    DARK(R.string.settings_theme_dark),
-    SYSTEM(R.string.settings_theme_system)
+	LIGHT(R.string.settings_theme_light),
+	DARK(R.string.settings_theme_dark),
+	SYSTEM(R.string.settings_theme_system)
 }
 
 @Composable

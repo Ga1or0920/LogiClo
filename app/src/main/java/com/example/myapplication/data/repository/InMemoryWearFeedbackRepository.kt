@@ -27,6 +27,8 @@ class InMemoryWearFeedbackRepository : WearFeedbackRepository {
             wornAt = now,
             topItemId = topItemId,
             bottomItemId = bottomItemId,
+            topRating = null,
+            bottomRating = null,
             rating = null,
             notes = null,
             submittedAt = null
@@ -34,12 +36,14 @@ class InMemoryWearFeedbackRepository : WearFeedbackRepository {
         entriesState.update { current -> current + (entry.id to entry) }
     }
 
-    override suspend fun submitFeedback(entryId: String, rating: WearFeedbackRating, notes: String?) {
+    override suspend fun submitFeedback(entryId: String, topRating: WearFeedbackRating?, bottomRating: WearFeedbackRating?, notes: String?) {
         val submittedAt = InstantCompat.nowOrNull()
         entriesState.update { current ->
             val existing = current[entryId] ?: return@update current
             current + (entryId to existing.copy(
-                rating = rating,
+                topRating = topRating,
+                bottomRating = bottomRating,
+                rating = null,
                 notes = notes?.takeIf { it.isNotBlank() },
                 submittedAt = submittedAt
             ))
@@ -50,7 +54,8 @@ class InMemoryWearFeedbackRepository : WearFeedbackRepository {
         entriesState.update { current ->
             current.filterValues { entry ->
                 val wornAtMillis = InstantCompat.toEpochMilliOrNull(entry.wornAt) ?: Long.MAX_VALUE
-                entry.rating == null || wornAtMillis >= beforeEpochMillis
+                // Keep entry if it is still pending (no overall or per-part ratings) or it's recent enough
+                (entry.rating == null && entry.topRating == null && entry.bottomRating == null) || wornAtMillis >= beforeEpochMillis
             }
         }
     }

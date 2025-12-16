@@ -131,6 +131,8 @@ private fun clothingPathData(category: ClothingCategory): ClothingPathData = whe
     ClothingCategory.KNIT,
     ClothingCategory.SWEATSHIRT,
     ClothingCategory.JACKET,
+    ClothingCategory.FLEECE,
+    ClothingCategory.WINDBREAKER,
     ClothingCategory.OUTER_LIGHT,
     ClothingCategory.DOWN,
     ClothingCategory.COAT,
