@@ -65,8 +65,9 @@ import com.example.myapplication.ui.closet.model.ClosetUiState
 import com.example.myapplication.ui.closet.model.ClosetFilters
 import com.example.myapplication.ui.components.ClothingIllustrationSwatch
 import com.example.myapplication.ui.providers.LocalAppContainer
-import com.example.myapplication.ui.theme.MyApplicationTheme
+import com.example.myapplication.ui.theme.LogiCloTheme
 import com.example.myapplication.ui.common.labelResId
+import com.example.myapplication.domain.model.ClothingItem
 
 @Composable
 fun ClosetScreen(
@@ -524,7 +525,7 @@ private fun ClosetItemCard(
 @Preview(showBackground = true)
 @Composable
 private fun ClosetScreenPreview() {
-    MyApplicationTheme {
+    LogiCloTheme {
         val sampleItems = SampleData.closetItems.map {
                 ClosetItemUi(
                     id = it.id,

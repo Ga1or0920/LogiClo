@@ -51,7 +51,7 @@ import com.example.myapplication.ui.laundry.model.LaundryTab
 import com.example.myapplication.ui.laundry.model.LaundryUiState
 import com.example.myapplication.ui.components.ClothingIllustrationSwatch
 import com.example.myapplication.ui.providers.LocalAppContainer
-import com.example.myapplication.ui.theme.MyApplicationTheme
+import com.example.myapplication.ui.theme.LogiCloTheme
 
 @Composable
 fun LaundryScreen(modifier: Modifier = Modifier) {
@@ -379,7 +379,7 @@ private fun LaundryScreenPreview() {
                 lastWornLabel = "11/28 19:10"
             )
         }
-    MyApplicationTheme {
+    LogiCloTheme {
         LaundryContent(
             state = LaundryUiState(
                 isLoading = false,

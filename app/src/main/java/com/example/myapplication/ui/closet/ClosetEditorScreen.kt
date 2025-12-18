@@ -68,7 +68,7 @@ import com.example.myapplication.ui.closet.model.CategoryOption
 import com.example.myapplication.ui.closet.model.ClosetEditorUiState
 import com.example.myapplication.ui.closet.model.ColorOption
 import com.example.myapplication.ui.providers.LocalAppContainer
-import com.example.myapplication.ui.theme.MyApplicationTheme
+import com.example.myapplication.ui.theme.LogiCloTheme
 import kotlin.math.roundToInt
 import kotlin.ranges.ClosedFloatingPointRange
 import java.util.Locale
@@ -638,7 +638,7 @@ private fun ClosetEditorPreview() {
         availableCategories = closetCategoryOptions(),
         availableColors = closetColorOptions()
     )
-    MyApplicationTheme {
+    LogiCloTheme { // <- ここを修正
         ClosetEditorContent(
             state = sampleState,
             onClose = {},

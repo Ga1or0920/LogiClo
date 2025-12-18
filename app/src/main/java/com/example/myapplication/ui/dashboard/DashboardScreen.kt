@@ -123,7 +123,7 @@ import com.example.myapplication.ui.dashboard.model.WeatherDebugUiState
 import com.example.myapplication.ui.dashboard.model.ClockDebugUiState
 import com.example.myapplication.ui.dashboard.model.WeatherLocationUiState
 import com.example.myapplication.ui.providers.LocalAppContainer
-import com.example.myapplication.ui.theme.MyApplicationTheme
+import com.example.myapplication.ui.theme.LogiCloTheme
 import com.example.myapplication.util.time.InstantCompat
 import com.google.android.gms.common.ConnectionResult
 import com.google.android.gms.common.GoogleApiAvailability
@@ -1932,7 +1932,7 @@ private const val LOCATION_SEARCH_MIN_QUERY_LENGTH = 2
 @Preview(showBackground = true)
 @Composable
 private fun DashboardScreenPreview() {
-    MyApplicationTheme {
+    LogiCloTheme {
         val container = InMemoryAppContainer()
         androidx.compose.runtime.CompositionLocalProvider(
             LocalAppContainer provides container
