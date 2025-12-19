@@ -13,7 +13,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 
 enum class ItemType { OUTER, TOP, BOTTOM }
 enum class AppMode { CASUAL, OFFICE }
-enum class EnvMode { OUTDOOR, DRIVE, INDOOR }
+enum class EnvMode { OUTDOOR, INDOOR }
 enum class CleaningType { HOME, DRY }
 enum class FitType { SLIM, REGULAR, LOOSE }
 enum class SleeveLength { SHORT, LONG, NONE }

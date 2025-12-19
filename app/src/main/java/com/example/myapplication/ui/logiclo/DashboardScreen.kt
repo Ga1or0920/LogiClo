@@ -213,7 +213,7 @@ private fun Header(
                 IconToggleGroup(
                     selectedIndex = uiState.selectedEnv.ordinal,
                     onChanged = { onEnvChange(EnvMode.values()[it]) },
-                    icons = listOf(Icons.Default.Park, Icons.Default.DirectionsCar, Icons.Default.Chair)
+                    icons = listOf(Icons.Default.Park, Icons.Default.Chair)
                 )
             }
         }
