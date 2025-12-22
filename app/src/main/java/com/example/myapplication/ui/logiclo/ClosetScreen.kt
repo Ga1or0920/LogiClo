@@ -22,7 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -42,7 +42,8 @@ import java.util.*
 @Composable
 fun ClosetScreen(viewModel: LogiCloViewModel) {
     var filterIndex by remember { mutableStateOf(0) }
-    var showAddItemSheet by remember { mutableStateOf(false) }
+    var editingItem by remember { mutableStateOf<UiClothingItem?>(null) }
+    val showAddItemSheet = editingItem != null
     val uiState by viewModel.uiState.collectAsState()
 
     val items = when (filterIndex) {
@@ -65,7 +66,16 @@ fun ClosetScreen(viewModel: LogiCloViewModel) {
             ExtendedFloatingActionButton(
                 text = { Text("服を追加") },
                 icon = { Icon(Icons.Default.Add, contentDescription = "Add Item") },
-                onClick = { showAddItemSheet = true },
+                onClick = { editingItem = UiClothingItem(
+                    id = "",
+                    name = "",
+                    brand = "",
+                    type = ItemType.TOP,
+                    categoryKey = "t_shirt",
+                    color = Color.White,
+                    icon = com.example.myapplication.R.drawable.ic_clothing_top,
+                    maxWears = 1
+                ) },
             )
         }
     ) { paddingValues ->
@@ -93,7 +103,13 @@ fun ClosetScreen(viewModel: LogiCloViewModel) {
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(items.size) { index ->
-                        ClosetItemRow(item = items[index], onToggleStatus = { viewModel.toggleItemStatus(items[index]) })
+                        ClosetItemRow(
+                            item = items[index],
+                            onIncrementWear = { viewModel.incrementWearCount(items[index]) },
+                            onMoveToLaundry = { viewModel.moveToLaundry(items[index]) },
+                            onEditItem = { editingItem = items[index] },
+                            onDeleteItem = { viewModel.deleteItem(items[index]) }
+                        )
                     }
                 }
             }
@@ -102,14 +118,21 @@ fun ClosetScreen(viewModel: LogiCloViewModel) {
 
     if (showAddItemSheet) {
         AddItemSheet(
+            itemToEdit = editingItem,
             viewModel = viewModel,
-            onDismiss = { showAddItemSheet = false }
+            onDismiss = { editingItem = null }
         )
     }
 }
 
 @Composable
-fun ClosetItemRow(item: UiClothingItem, onToggleStatus: () -> Unit) {
+fun ClosetItemRow(
+    item: UiClothingItem, 
+    onIncrementWear: () -> Unit,
+    onMoveToLaundry: () -> Unit,
+    onEditItem: () -> Unit,
+    onDeleteItem: () -> Unit
+) {
     Card(
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
@@ -121,7 +144,7 @@ fun ClosetItemRow(item: UiClothingItem, onToggleStatus: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                imageVector = item.icon,
+                painter = painterResource(id = item.icon),
                 contentDescription = item.name,
                 tint = item.color,
                 modifier = Modifier
@@ -141,13 +164,20 @@ fun ClosetItemRow(item: UiClothingItem, onToggleStatus: () -> Unit) {
                     style = MaterialTheme.typography.bodySmall,
                     color = if(item.isDirty) MaterialTheme.colorScheme.error else TextGrey
                 )
+                Row {
+                    TextButton(onClick = onIncrementWear) {
+                        Text("着用回数+1")
+                    }
+                    TextButton(onClick = onMoveToLaundry) {
+                        Text("洗濯かごへ移動")
+                    }
+                }
             }
-            IconButton(onClick = onToggleStatus) {
-                Icon(
-                    if (item.isDirty) Icons.Default.LocalLaundryService else Icons.Default.CheckCircleOutline,
-                    contentDescription = "Toggle Status",
-                    tint = if (item.isDirty) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-                )
+            IconButton(onClick = onEditItem) {
+                Icon(Icons.Default.Edit, contentDescription = "Edit Item")
+            }
+            IconButton(onClick = onDeleteItem) {
+                Icon(Icons.Default.Delete, contentDescription = "Delete Item")
             }
         }
     }
@@ -157,20 +187,23 @@ fun ClosetItemRow(item: UiClothingItem, onToggleStatus: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AddItemSheet(
+    itemToEdit: UiClothingItem?,
     viewModel: LogiCloViewModel,
     onDismiss: () -> Unit
 ) {
+    val isEditing = itemToEdit?.id?.isNotEmpty() == true
+
     val categories = remember { listOf(
-        mapOf("key" to "t_shirt", "icon" to Icons.Default.Checkroom, "label" to "Tシャツ"),
-        mapOf("key" to "polo", "icon" to Icons.Default.Checkroom, "label" to "ポロシャツ"),
-        mapOf("key" to "shirt", "icon" to Icons.Default.Checkroom, "label" to "シャツ"),
-        mapOf("key" to "knit", "icon" to Icons.Default.Checkroom, "label" to "ニット"),
-        mapOf("key" to "hoodie", "icon" to Icons.Default.Checkroom, "label" to "パーカー"),
-        mapOf("key" to "denim", "icon" to Icons.Default.AccessibilityNew, "label" to "デニム"),
-        mapOf("key" to "slacks", "icon" to Icons.Default.AccessibilityNew, "label" to "スラックス"),
-        mapOf("key" to "chino", "icon" to Icons.Default.AccessibilityNew, "label" to "チノパン"),
-        mapOf("key" to "jacket", "icon" to Icons.Default.AllOut, "label" to "ジャケット"),
-        mapOf("key" to "coat", "icon" to Icons.Default.AllOut, "label" to "コート"),
+        mapOf("key" to "t_shirt", "icon" to com.example.myapplication.R.drawable.ic_clothing_top, "label" to "Tシャツ"),
+        mapOf("key" to "polo", "icon" to com.example.myapplication.R.drawable.ic_clothing_top, "label" to "ポロシャツ"),
+        mapOf("key" to "shirt", "icon" to com.example.myapplication.R.drawable.ic_clothing_top, "label" to "シャツ"),
+        mapOf("key" to "knit", "icon" to com.example.myapplication.R.drawable.ic_clothing_top, "label" to "ニット"),
+        mapOf("key" to "hoodie", "icon" to com.example.myapplication.R.drawable.ic_clothing_top, "label" to "パーカー"),
+        mapOf("key" to "denim", "icon" to com.example.myapplication.R.drawable.ic_clothing_bottom, "label" to "デニム"),
+        mapOf("key" to "slacks", "icon" to com.example.myapplication.R.drawable.ic_clothing_bottom, "label" to "スラックス"),
+        mapOf("key" to "chino", "icon" to com.example.myapplication.R.drawable.ic_clothing_bottom, "label" to "チノパン"),
+        mapOf("key" to "jacket", "icon" to com.example.myapplication.R.drawable.ic_clothing_outer, "label" to "ジャケット"),
+        mapOf("key" to "coat", "icon" to com.example.myapplication.R.drawable.ic_clothing_outer, "label" to "コート"),
     )}
     val colors = remember { listOf(
         Color.White, Color.Black, Color.Gray, Color(0xFF1A237E),
@@ -178,16 +211,16 @@ private fun AddItemSheet(
         Color(0xFF558B2F), Color(0xFF795548), Color(0xFFE53935),
     )}
 
-    var categoryKey by remember { mutableStateOf("t_shirt") }
-    var name by remember { mutableStateOf("Tシャツ") }
-    var brand by remember { mutableStateOf("") }
-    var color by remember { mutableStateOf(Color.White) }
-    var isAlwaysWash by remember { mutableStateOf(true) }
-    var maxWears by remember { mutableStateOf(1f) }
-    var fit by remember { mutableStateOf(FitType.REGULAR) }
-    var sleeve by remember { mutableStateOf(SleeveLength.SHORT) }
-    var thickness by remember { mutableStateOf(Thickness.NORMAL) }
-    var initialStatusIndex by remember { mutableStateOf(0) }
+    var categoryKey by remember { mutableStateOf(itemToEdit?.categoryKey ?: "t_shirt") }
+    var name by remember { mutableStateOf(itemToEdit?.name ?: "Tシャツ") }
+    var brand by remember { mutableStateOf(itemToEdit?.brand ?: "") }
+    var color by remember { mutableStateOf(itemToEdit?.color ?: Color.White) }
+    var isAlwaysWash by remember { mutableStateOf(itemToEdit?.maxWears == 1) }
+    var maxWears by remember { mutableStateOf(itemToEdit?.maxWears?.toFloat() ?: 1f) }
+    var fit by remember { mutableStateOf(itemToEdit?.fit ?: FitType.REGULAR) }
+    var sleeve by remember { mutableStateOf(itemToEdit?.sleeveLength ?: SleeveLength.SHORT) }
+    var thickness by remember { mutableStateOf(itemToEdit?.thickness ?: Thickness.NORMAL) }
+    var initialStatusIndex by remember { mutableStateOf(if (itemToEdit?.isDirty == true) 1 else 0) }
 
     val onCategorySelected = { cat: Map<String, Any> ->
         categoryKey = cat["key"] as String
@@ -202,12 +235,13 @@ private fun AddItemSheet(
     fun saveItem() {
         val defaults = viewModel.getSmartDefaults(categoryKey)
         val newItem = UiClothingItem(
-            id = UUID.randomUUID().toString(),
+            id = itemToEdit?.id ?: UUID.randomUUID().toString(),
             name = name,
             brand = brand,
             type = defaults["type"] as ItemType,
+            categoryKey = categoryKey,
             color = color,
-            icon = categories.first { it["key"] == categoryKey }["icon"] as ImageVector,
+            icon = categories.first { it["key"] == categoryKey }["icon"] as Int,
             maxWears = if (isAlwaysWash) 1 else maxWears.toInt(),
             isDirty = initialStatusIndex != 0,
             cleaningType = if (initialStatusIndex == 2) CleaningType.DRY else CleaningType.HOME,
@@ -229,7 +263,7 @@ private fun AddItemSheet(
                 Box(modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 24.dp, vertical = 16.dp)) {
-                    Text("新しい服を登録", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.CenterStart))
+                    Text(if (isEditing) "服を編集" else "新しい服を登録", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.CenterStart))
                     IconButton(onClick = onDismiss, modifier = Modifier.align(Alignment.CenterEnd)) {
                         Icon(Icons.Default.Close, contentDescription = "Close")
                     }
@@ -262,7 +296,7 @@ private fun AddItemSheet(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Icon(
-                        imageVector = categories.first { it["key"] == categoryKey } ["icon"] as ImageVector,
+                        painter = painterResource(id = categories.first { it["key"] == categoryKey } ["icon"] as Int),
                         contentDescription = name,
                         tint = color,
                         modifier = Modifier
@@ -301,7 +335,7 @@ private fun AddItemSheet(
                     items(categories) { cat ->
                         val isSelected = categoryKey == cat["key"]
                         CategoryChip(
-                            icon = cat["icon"] as ImageVector,
+                            icon = cat["icon"] as Int,
                             label = cat["label"] as String,
                             isSelected = isSelected,
                             onTap = { onCategorySelected(cat) }
@@ -392,7 +426,7 @@ private fun AddItemSheet(
 }
 
 @Composable
-private fun CategoryChip(icon: ImageVector, label: String, isSelected: Boolean, onTap: () -> Unit) {
+private fun CategoryChip(icon: Int, label: String, isSelected: Boolean, onTap: () -> Unit) {
     val backgroundColor by animateColorAsState(if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
     val contentColor by animateColorAsState(if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant)
 
@@ -405,7 +439,7 @@ private fun CategoryChip(icon: ImageVector, label: String, isSelected: Boolean, 
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Icon(icon, contentDescription = label, tint = contentColor)
+        Icon(painterResource(id = icon), contentDescription = label, tint = contentColor)
         Spacer(Modifier.height(4.dp))
         Text(label, fontSize = 10.sp, color = contentColor)
     }

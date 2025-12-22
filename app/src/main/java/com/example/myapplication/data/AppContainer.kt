@@ -76,7 +76,14 @@ class DefaultAppContainer(
     private val clockDebugControllerImpl: DebugClockController =
         if (isDebugBuild) DebugClockControllerImpl() else NoOpDebugClockController
     override val locationSearchRepository: LocationSearchRepository =
-        GeocoderLocationSearchRepository(context)
+        // If the YOLP app id is configured via BuildConfig, prefer YOLP-backed search.
+        if (com.example.myapplication.BuildConfig.YOLP_APP_ID.isNotBlank()) {
+            com.example.myapplication.data.repository.YolpLocationSearchRepository(
+                com.example.myapplication.BuildConfig.YOLP_APP_ID
+            )
+        } else {
+            GeocoderLocationSearchRepository(context)
+        }
     override val weatherRepository: WeatherRepository = DebugWeatherRepository(
         delegate = openMeteoWeatherRepository,
         debugController = weatherDebugControllerImpl

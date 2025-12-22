@@ -82,8 +82,10 @@ class OpenMeteoWeatherRepository(
         val json = JSONObject(response)
         val daily = json.optJSONObject("daily")
         val hourly = json.optJSONObject("hourly")
+        val currentWeather = json.optJSONObject("current_weather")
         val minTemp = daily?.optJSONArray("temperature_2m_min")?.optDouble(0) ?: state.value.minTemperatureCelsius
         val maxTemp = daily?.optJSONArray("temperature_2m_max")?.optDouble(0) ?: state.value.maxTemperatureCelsius
+        val apparentTemp = currentWeather?.optDouble("apparent_temperature") ?: state.value.apparentTemperatureCelsius
         val humidityArray = hourly?.optJSONArray("relative_humidity_2m")
         val humidity = humidityArray?.optDouble(0)?.toInt() ?: state.value.humidityPercent
         val zone = resolveZone(json)
@@ -92,6 +94,7 @@ class OpenMeteoWeatherRepository(
         return WeatherSnapshot(
             minTemperatureCelsius = minTemp,
             maxTemperatureCelsius = maxTemp,
+            apparentTemperatureCelsius = apparentTemp,
             humidityPercent = humidity,
             updatedAt = updatedAt,
             casualSegmentSummaries = casualSummaries

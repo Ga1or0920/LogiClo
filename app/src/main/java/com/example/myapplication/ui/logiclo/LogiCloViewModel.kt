@@ -1,14 +1,10 @@
 package com.example.myapplication.ui.logiclo
 
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccessibilityNew
-import androidx.compose.material.icons.filled.AllOut
-import androidx.compose.material.icons.filled.Checkroom
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.example.myapplication.R
 import com.example.myapplication.data.repository.ClosetRepository
 import com.example.myapplication.domain.model.ClothingCategory
 import com.example.myapplication.domain.model.ClothingType
@@ -165,6 +161,52 @@ class LogiCloViewModel(
     }
 
     // --- Closet & Laundry Actions ---
+    fun incrementWearCount(item: UiClothingItem) {
+        viewModelScope.launch {
+            val newWears = item.currentWears + 1
+            val isDirty = newWears >= item.maxWears
+            val status = if (isDirty) LaundryStatus.DIRTY else LaundryStatus.CLOSET
+            val currentWears = if (isDirty) 0 else newWears
+            val domainItem = item.toDomainModel().copy(currentWears = currentWears, status = status)
+            closetRepository.upsert(domainItem)
+        }
+    }
+
+    fun moveToLaundry(item: UiClothingItem) {
+        viewModelScope.launch {
+            val domainItem = item.toDomainModel().copy(status = LaundryStatus.DIRTY, currentWears = 0)
+            closetRepository.upsert(domainItem)
+        }
+    }
+
+    fun deleteItem(item: UiClothingItem) {
+        viewModelScope.launch {
+            closetRepository.delete(item.id)
+        }
+    }
+
+    fun washSelectedItems(itemIds: List<String>) {
+        viewModelScope.launch {
+            val itemsToWash = _uiState.value.inventory.filter { itemIds.contains(it.id) }
+            val updatedItems = itemsToWash.map { 
+                it.toDomainModel().copy(status = LaundryStatus.CLOSET, currentWears = 0)
+            }
+            if (updatedItems.isNotEmpty()) {
+                closetRepository.upsert(updatedItems)
+            }
+            _uiState.update { currentState ->
+                val newInventory = currentState.inventory.map { 
+                    if (itemIds.contains(it.id)) {
+                        it.copy(isDirty = false, currentWears = 0)
+                    } else {
+                        it
+                    }
+                }
+                currentState.copy(inventory = newInventory)
+            }
+        }
+    }
+
     fun toggleItemStatus(item: UiClothingItem) {
         viewModelScope.launch {
             val newStatus = if (item.isDirty) LaundryStatus.CLOSET else LaundryStatus.DIRTY
@@ -175,15 +217,8 @@ class LogiCloViewModel(
     }
 
     fun washAllHomeItems() {
-        viewModelScope.launch {
-            val dirtyHomeItems = _uiState.value.inventory.filter { it.isDirty && it.cleaningType == CleaningType.HOME }
-            val updatedItems = dirtyHomeItems.map { 
-                it.toDomainModel().copy(status = LaundryStatus.CLOSET, currentWears = 0)
-            }
-            if (updatedItems.isNotEmpty()) {
-                closetRepository.upsert(updatedItems)
-            }
-        }
+        val homeItems = dirtyHomeItems.map { it.id }
+        washSelectedItems(homeItems)
     }
 
     fun resetAllData() {
@@ -231,10 +266,11 @@ class LogiCloViewModel(
         }
         
         val uiIcon = when (this.type) {
-             ClothingType.TOP, ClothingType.INNER -> Icons.Default.Checkroom
-             ClothingType.BOTTOM -> Icons.Default.AccessibilityNew
-             ClothingType.OUTER -> Icons.Default.AllOut
-             else -> Icons.Default.Checkroom
+            ClothingType.TOP -> R.drawable.ic_clothing_top
+            ClothingType.INNER -> R.drawable.ic_clothing_inner
+            ClothingType.OUTER -> R.drawable.ic_clothing_outer
+            ClothingType.BOTTOM -> R.drawable.ic_clothing_bottom
+            else -> R.drawable.ic_clothing_top
         }
         
         val uiCleaningType = when (this.cleaningType) {
@@ -255,6 +291,7 @@ class LogiCloViewModel(
             name = this.name,
             brand = this.brand ?: "",
             type = uiType,
+            categoryKey = this.category.name.lowercase(Locale.ROOT),
             sleeveLength = SleeveLength.values().find { it.name.equals(this.sleeveLength.name, true) } ?: SleeveLength.SHORT,
             thickness = Thickness.values().find { it.name.equals(this.thickness.name, true) } ?: Thickness.NORMAL,
             color = uiColor,
@@ -274,7 +311,7 @@ class LogiCloViewModel(
             ItemType.OUTER -> ClothingType.OUTER
         }
         
-        val domainCategory = ClothingCategory.UNKNOWN // Simplification for now
+        val domainCategory = ClothingCategory.values().find { it.name.equals(this.categoryKey, ignoreCase = true) } ?: ClothingCategory.UNKNOWN
 
         val domainStatus = if (this.isDirty) LaundryStatus.DIRTY else LaundryStatus.CLOSET
         
@@ -293,8 +330,8 @@ class LogiCloViewModel(
             name = this.name,
             category = domainCategory,
             type = domainType,
-            sleeveLength = com.example.myapplication.domain.model.SleeveLength.valueOf(this.sleeveLength.name),
-            thickness = com.example.myapplication.domain.model.Thickness.valueOf(this.thickness.name),
+            sleeveLength = com.example.myapplication.domain.model.SleeveLength.values().find { it.name.equals(this.sleeveLength.name, true) } ?: com.example.myapplication.domain.model.SleeveLength.NONE,
+            thickness = com.example.myapplication.domain.model.Thickness.values().find { it.name.equals(this.thickness.name, true) } ?: com.example.myapplication.domain.model.Thickness.NORMAL,
             colorHex = hex,
             colorGroup = ColorGroup.UNKNOWN,
             pattern = Pattern.UNKNOWN,

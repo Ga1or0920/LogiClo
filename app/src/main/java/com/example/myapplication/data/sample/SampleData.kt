@@ -414,6 +414,7 @@ object SampleData {
     val weather: WeatherSnapshot = WeatherSnapshot(
         minTemperatureCelsius = 18.0,
         maxTemperatureCelsius = 27.0,
+        apparentTemperatureCelsius = 22.0,
         humidityPercent = 65,
         updatedAt = null,
         casualSegmentSummaries = listOf(

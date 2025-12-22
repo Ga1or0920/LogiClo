@@ -19,6 +19,9 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // YOLP (Yahoo Open Local Platform) アプリIDを gradle プロパティから BuildConfig に渡す
+        val yolpAppId: String = (project.findProperty("YOLP_APP_ID") as? String) ?: ""
+        buildConfigField("String", "YOLP_APP_ID", "\"$yolpAppId\"")
     }
 
     buildTypes {
@@ -40,6 +43,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

@@ -57,6 +57,8 @@ import com.example.myapplication.ui.dashboard.model.ColorWishColorOption
 import com.example.myapplication.ui.dashboard.model.ColorWishPreferenceUi
 import com.example.myapplication.ui.dashboard.model.ColorWishTypeOption
 import com.example.myapplication.ui.dashboard.model.ColorWishUiState
+import com.example.myapplication.ui.dashboard.model.ColorWishPreference
+import com.example.myapplication.ui.dashboard.model.ColorWishDialogState
 import com.example.myapplication.ui.dashboard.model.WeatherLocationUiState
 import com.example.myapplication.ui.dashboard.model.LocationSearchUiState
 import com.example.myapplication.ui.dashboard.model.LocationSearchResultUiState
@@ -99,8 +101,11 @@ class DashboardViewModel(
     private val weatherSuitabilityEvaluator: WeatherSuitabilityEvaluator,
     private val applyWearUseCase: ApplyWearUseCase,
     private val locationSearchRepository: LocationSearchRepository,
-    private val stringResolver: (Int) -> String
+    private val stringResolver: (Int) -> String,
+    private val suggestionEngine: SuggestionEngine
 ) : ViewModel() {
+
+    private val casualForecastEngine = CasualForecastEngine()
 
     private val _uiState = MutableStateFlow(DashboardUiState())
     val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
@@ -226,14 +231,20 @@ class DashboardViewModel(
                         ?: EnvironmentMode.OUTDOOR
                     val closetItems = items.filter { it.status == LaundryStatus.CLOSET }
                     latestClosetItems = closetItems
-                    val colorWishUiState = buildColorWishUiState(
-                        closetItems = closetItems,
-                        currentPreference = colorWishPref,
-                        dialogState = dialogState
-                    )
-                    val activeColorWish = colorWishPreference.value
+                    val (colorWishUiState, maybeUpdatedPreference) =
+                        ColorWishHelper.buildColorWishUiState(
+                            closetItems = closetItems,
+                            currentPreference = colorWishPref,
+                            dialogState = dialogState,
+                            currentPreferenceValue = colorWishPreference.value,
+                            stringResolver = stringResolver
+                        ).let { it.uiState to it.updatedPreference }
+                    val activeColorWish = maybeUpdatedPreference ?: colorWishPreference.value
+                    if (maybeUpdatedPreference != colorWishPreference.value) {
+                        colorWishPreference.value = maybeUpdatedPreference
+                    }
                     val casualComputation = if (mode == TpoMode.CASUAL) {
-                        buildCasualForecastState(weather, inputs.casualSelection)
+                        casualForecastEngine.compute(weather, inputs.casualSelection)
                     } else {
                         CasualForecastComputation()
                     }
@@ -254,9 +265,8 @@ class DashboardViewModel(
                     } else {
                         resolveComfortRange(environment, weather, indoorOverride = preferences.indoorTemperatureCelsius)
                     }
-                    val suggestionResult = buildSuggestions(
+                    val suggestionResult = suggestionEngine.buildSuggestions(
                         mode = mode,
-                        environment = environment,
                         items = closetItems,
                         disallowVividPair = preferences.colorRules.disallowVividPair,
                         allowBlackNavy = preferences.colorRules.allowBlackNavy,
@@ -689,199 +699,7 @@ class DashboardViewModel(
         }
     }
 
-    private fun buildSuggestions(
-        mode: TpoMode,
-        environment: EnvironmentMode,
-        items: List<ClothingItem>,
-        disallowVividPair: Boolean,
-        allowBlackNavy: Boolean,
-        temperatureMin: Double,
-        temperatureMax: Double,
-        colorWish: ColorWishPreference?
-    ): SuggestionResult {
-        val recommendations = mutableListOf<UiMessage>()
-
-        if (items.isEmpty()) {
-            recommendations += buildRecommendationMessage(R.string.dashboard_recommendation_missing_top_inventory, mode, ClothingType.TOP)
-            recommendations += buildRecommendationMessage(R.string.dashboard_recommendation_missing_bottom_inventory, mode, ClothingType.BOTTOM)
-            return SuggestionResult(emptyList(), recommendations.distinct())
-        }
-
-        val topsInCloset = items.filter { it.type == ClothingType.TOP }
-        val bottomsInCloset = items.filter { it.type == ClothingType.BOTTOM }
-        val outersInCloset = items.filter { it.type == ClothingType.OUTER }
-
-        if (topsInCloset.isEmpty()) {
-            recommendations += buildRecommendationMessage(R.string.dashboard_recommendation_missing_top_inventory, mode, ClothingType.TOP)
-        }
-        if (bottomsInCloset.isEmpty()) {
-            recommendations += buildRecommendationMessage(R.string.dashboard_recommendation_missing_bottom_inventory, mode, ClothingType.BOTTOM)
-        }
-
-        val tops = topsInCloset.filter { item ->
-            weatherSuitabilityEvaluator.isSuitable(
-                item = item,
-                minTemperature = temperatureMin,
-                maxTemperature = temperatureMax
-            )
-        }
-        if (tops.isEmpty() && topsInCloset.isNotEmpty()) {
-            recommendations += buildRecommendationMessage(R.string.dashboard_recommendation_weather_top, mode, ClothingType.TOP)
-        }
-
-        val bottoms = bottomsInCloset.filter { item ->
-            weatherSuitabilityEvaluator.isSuitable(
-                item = item,
-                minTemperature = temperatureMin,
-                maxTemperature = temperatureMax
-            )
-        }
-        if (bottoms.isEmpty() && bottomsInCloset.isNotEmpty()) {
-            recommendations += buildRecommendationMessage(R.string.dashboard_recommendation_weather_bottom, mode, ClothingType.BOTTOM)
-        }
-
-        var candidateTops = if (tops.isNotEmpty()) tops else topsInCloset
-        var candidateBottoms = if (bottoms.isNotEmpty()) bottoms else bottomsInCloset
-        var outerCandidates = resolveOuterCandidates(
-            outers = outersInCloset,
-            temperatureMin = temperatureMin,
-            temperatureMax = temperatureMax
-        )
-
-        var colorWishApplied = false
-        if (colorWish != null && colorWish.type in COLOR_WISH_SUPPORTED_TYPES) {
-            colorWishApplied = true
-            when (colorWish.type) {
-                ClothingType.TOP -> {
-                    candidateTops = candidateTops.filter { matchesColor(it, colorWish.colorHex) }
-                    if (candidateTops.isEmpty()) {
-                        recommendations += buildColorWishMissingMessage(colorWish)
-                        return SuggestionResult(emptyList(), recommendations.distinct())
-                    }
-                }
-
-                ClothingType.BOTTOM -> {
-                    candidateBottoms = candidateBottoms.filter { matchesColor(it, colorWish.colorHex) }
-                    if (candidateBottoms.isEmpty()) {
-                        recommendations += buildColorWishMissingMessage(colorWish)
-                        return SuggestionResult(emptyList(), recommendations.distinct())
-                    }
-                }
-
-                ClothingType.OUTER -> {
-                    outerCandidates = outerCandidates.filter { matchesColor(it, colorWish.colorHex) }
-                    if (outerCandidates.isEmpty()) {
-                        recommendations += buildColorWishMissingMessage(colorWish)
-                        return SuggestionResult(emptyList(), recommendations.distinct())
-                    }
-                }
-
-                else -> Unit
-            }
-        }
-
-        if (candidateTops.isEmpty() || candidateBottoms.isEmpty()) {
-            if (recommendations.isEmpty()) {
-                val fallbackType = if (candidateTops.isEmpty()) ClothingType.TOP else ClothingType.BOTTOM
-                recommendations += buildGenericRecommendation(mode, fallbackType)
-            }
-            return SuggestionResult(emptyList(), recommendations.distinct())
-        }
-
-        val scoreRange = resolveScoreRange(mode)
-
-        val suggestions = mutableListOf<OutfitSuggestion>()
-        var filteredByColor = false
-        var filteredByScore = false
-        for (top in candidateTops) {
-            val topScore = formalScoreCalculator.calculate(top)
-            for (bottom in candidateBottoms) {
-                val bottomScore = formalScoreCalculator.calculate(bottom)
-                val totalScore = topScore + bottomScore
-                if (totalScore !in scoreRange) {
-                    filteredByScore = true
-                    continue
-                }
-                if (!isColorCompatible(top, bottom, disallowVividPair, allowBlackNavy)) {
-                    filteredByColor = true
-                    continue
-                }
-                val outer = pickOuterCandidate(outerCandidates, suggestions.size)
-                suggestions += OutfitSuggestion(
-                    top = top,
-                    bottom = bottom,
-                    outer = outer,
-                    totalScore = totalScore
-                )
-            }
-        }
-
-        val sortedSuggestions = suggestions
-            .sortedWith(
-                compareByDescending<OutfitSuggestion> { it.totalScore }
-                    .thenBy { it.top.name }
-                    .thenBy { it.bottom.name }
-                    .thenBy { it.outer?.name ?: "" }
-            )
-            .take(20)
-
-        if (sortedSuggestions.isNotEmpty()) {
-            return SuggestionResult(sortedSuggestions, recommendations.distinct())
-        }
-
-        val relaxedSuggestions = mutableListOf<OutfitSuggestion>()
-        for (top in candidateTops) {
-            val topScore = formalScoreCalculator.calculate(top)
-            for (bottom in candidateBottoms) {
-                val bottomScore = formalScoreCalculator.calculate(bottom)
-                if (!isColorCompatible(top, bottom, disallowVividPair, allowBlackNavy)) continue
-                val outer = pickOuterCandidate(outerCandidates, relaxedSuggestions.size)
-                relaxedSuggestions += OutfitSuggestion(
-                    top = top,
-                    bottom = bottom,
-                    outer = outer,
-                    totalScore = topScore + bottomScore
-                )
-            }
-        }
-
-        if (relaxedSuggestions.isNotEmpty()) {
-            if (filteredByScore) {
-                recommendations += buildGenericRecommendation(mode, if (candidateTops.size <= candidateBottoms.size) ClothingType.TOP else ClothingType.BOTTOM)
-            }
-            return SuggestionResult(
-                suggestions = relaxedSuggestions
-                    .sortedWith(
-                        compareByDescending<OutfitSuggestion> { it.totalScore }
-                            .thenBy { it.top.name }
-                            .thenBy { it.bottom.name }
-                            .thenBy { it.outer?.name ?: "" }
-                    )
-                    .take(20),
-                recommendations = recommendations.distinct()
-            )
-        }
-
-        val fallbackType = if (candidateTops.size <= candidateBottoms.size) ClothingType.TOP else ClothingType.BOTTOM
-        if (filteredByColor) {
-            recommendations += buildGenericRecommendation(mode, fallbackType)
-        }
-        if (colorWishApplied && colorWish != null) {
-            recommendations += UiMessage(
-                resId = R.string.dashboard_color_wish_no_match,
-                args = listOf(
-                    UiMessageArg.Raw(stringResolver(colorWish.type.labelResId())),
-                    UiMessageArg.Raw(colorWish.colorLabel)
-                )
-            )
-        }
-        if (recommendations.isEmpty()) {
-            recommendations += buildGenericRecommendation(mode, ClothingType.TOP)
-            recommendations += buildGenericRecommendation(mode, ClothingType.BOTTOM)
-        }
-
-        return SuggestionResult(emptyList(), recommendations.distinct())
-    }
+    // Suggestion generation moved to SuggestionEngine to reduce ViewModel size.
 
     private fun buildSelectionInsights(
         suggestion: OutfitSuggestion,
@@ -895,7 +713,7 @@ class DashboardViewModel(
     ): List<UiMessage> {
         val insights = mutableListOf<UiMessage>()
         val modeLabel = stringResolver(mode.toLabelResId())
-        val scoreRangeLabel = formatScoreRange(resolveScoreRange(mode))
+        val scoreRangeLabel = suggestionEngine.formatScoreRange(suggestionEngine.resolveScoreRange(mode))
         insights += UiMessage(
             resId = R.string.dashboard_insight_mode,
             args = listOf(
@@ -1072,34 +890,7 @@ class DashboardViewModel(
         )
     }
 
-    private fun resolveOuterCandidates(
-        outers: List<ClothingItem>,
-        temperatureMin: Double,
-        temperatureMax: Double
-    ): List<ClothingItem> {
-        if (outers.isEmpty()) return emptyList()
-        val suitable = outers.filter { outer ->
-            weatherSuitabilityEvaluator.isSuitable(
-                item = outer,
-                minTemperature = temperatureMin,
-                maxTemperature = temperatureMax
-            )
-        }
-        val pool = if (suitable.isNotEmpty()) suitable else outers
-        return pool.sortedWith(
-            compareByDescending<ClothingItem> { formalScoreCalculator.calculate(it) }
-                .thenBy { it.name }
-        )
-    }
-
-    private fun pickOuterCandidate(
-        candidates: List<ClothingItem>,
-        position: Int
-    ): ClothingItem? {
-        if (candidates.isEmpty()) return null
-        val index = position % candidates.size
-        return candidates[index]
-    }
+    
 
     private fun buildInventoryReviewMessages(
         alert: InventoryAlert?,
@@ -1111,13 +902,7 @@ class DashboardViewModel(
         return messages.distinct()
     }
 
-    private fun resolveScoreRange(mode: TpoMode): IntRange = when (mode) {
-        TpoMode.CASUAL -> 5..12
-        TpoMode.OFFICE -> 13..18
-        else -> 5..15
-    }
-
-    private fun formatScoreRange(range: IntRange): String = "${range.first}~${range.last}"
+    // Score range helpers moved to SuggestionEngine
 
     private fun formatTemperature(value: Double): String = String.format(Locale.JAPAN, "%.1f", value)
 
@@ -1128,8 +913,10 @@ class DashboardViewModel(
         maxOverride: Double? = null
         , indoorOverride: Double? = null
     ): Pair<Double, Double> {
-        val rawMin = minOf(weather.minTemperatureCelsius, weather.maxTemperatureCelsius)
-        val rawMax = maxOf(weather.minTemperatureCelsius, weather.maxTemperatureCelsius)
+        // Incorporate apparent (felt) temperature from Open-Meteo into comfort computation.
+        // Use the apparent temperature to ensure suggestions account for wind/chill or humidity effects.
+        val rawMin = minOf(weather.minTemperatureCelsius, weather.maxTemperatureCelsius, weather.apparentTemperatureCelsius)
+        val rawMax = maxOf(weather.minTemperatureCelsius, weather.maxTemperatureCelsius, weather.apparentTemperatureCelsius)
         val minTemperature = minOverride ?: rawMin
         val maxTemperature = maxOverride ?: rawMax
 
@@ -1150,62 +937,7 @@ class DashboardViewModel(
         }
     }
 
-    private fun buildCasualForecastState(
-        weather: WeatherSnapshot,
-        selection: CasualForecastSelection
-    ): CasualForecastComputation {
-        val summaries = weather.casualSegmentSummaries
-        if (summaries.isEmpty()) {
-            return CasualForecastComputation()
-        }
-        val groupedByDay = summaries.groupBy { it.day }
-        val dayOptions = groupedByDay.keys.sortedBy { it.ordinal }
-        if (dayOptions.isEmpty()) {
-            return CasualForecastComputation()
-        }
-        val resolvedDay = selection.day.takeIf { dayOptions.contains(it) } ?: dayOptions.first()
-        val summariesForDay = groupedByDay[resolvedDay].orEmpty()
-        if (summariesForDay.isEmpty()) {
-            return CasualForecastComputation()
-        }
-        val availableSegmentsForDay = summariesForDay.map { it.segment }.distinct().sortedBy { it.ordinal }
-        val resolvedSegment = selection.segment.takeIf { availableSegmentsForDay.contains(it) }
-            ?: availableSegmentsForDay.firstOrNull()
-            ?: return CasualForecastComputation()
-        val summaryForSelection = summariesForDay.firstOrNull { it.segment == resolvedSegment }
-            ?: return CasualForecastComputation()
-        val availableSegmentsOverall = CasualForecastSegment.values()
-            .filter { segment -> summaries.any { it.segment == segment } }
-        if (availableSegmentsOverall.isEmpty()) {
-            return CasualForecastComputation()
-        }
-        val segmentOptions = availableSegmentsOverall.map { segment ->
-            CasualForecastSegmentOption(
-                segment = segment,
-                isEnabled = availableSegmentsForDay.contains(segment)
-            )
-        }
-        val summary = summaryForSelection.toUiSummary()
-        val uiState = CasualForecastUiState(
-            dayOptions = dayOptions,
-            segmentOptions = segmentOptions,
-            selectedDay = resolvedDay,
-            selectedSegment = resolvedSegment,
-            summary = summary
-        )
-        return CasualForecastComputation(
-            uiState = uiState,
-            resolvedSelection = CasualForecastSelection(resolvedDay, resolvedSegment)
-        )
-    }
-
-    private fun CasualForecastSegmentSummary.toUiSummary(): CasualForecastSummary {
-        return CasualForecastSummary(
-            minTemperatureCelsius = minTemperatureCelsius,
-            maxTemperatureCelsius = maxTemperatureCelsius,
-            averageApparentTemperatureCelsius = averageApparentTemperatureCelsius
-        )
-    }
+    // Casual forecast computation moved to CasualForecastEngine
 
     private fun isColorCompatible(
         top: ClothingItem,
@@ -1429,15 +1161,15 @@ class DashboardViewModel(
 
     fun onLocationSearchResultSelected(resultId: String) {
         if (!locationSearchState.value.isVisible) return
-        val index = resultId.toIntOrNull() ?: return
-        val result = locationSearchState.value.results.getOrNull(index) ?: return
+        // Find the selected result from the rendered UI state so IDs match the UI.
+        val uiResult = _uiState.value.locationSearch.results.firstOrNull { it.id == resultId } ?: return
         viewModelScope.launch {
             userPreferencesRepository.update { current ->
                 current.copy(
                     weatherLocationOverride = WeatherLocationOverride(
-                        label = result.title,
-                        latitude = result.latitude,
-                        longitude = result.longitude
+                        label = uiResult.title,
+                        latitude = uiResult.latitude,
+                        longitude = uiResult.longitude
                     )
                 )
             }
@@ -1783,7 +1515,8 @@ class DashboardViewModel(
                     weatherSuitabilityEvaluator = weatherSuitabilityEvaluator,
                     applyWearUseCase = applyWearUseCase,
                     locationSearchRepository = locationSearchRepository,
-                    stringResolver = stringResolver
+                    stringResolver = stringResolver,
+                    suggestionEngine = SuggestionEngine(formalScoreCalculator, weatherSuitabilityEvaluator, stringResolver)
                 ) as T
             }
             throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
@@ -1791,10 +1524,7 @@ class DashboardViewModel(
     }
 }
 
-private data class SuggestionResult(
-    val suggestions: List<OutfitSuggestion>,
-    val recommendations: List<UiMessage>
-)
+// SuggestionResult moved to SuggestionEngine
 
 private data class SuggestionSelectionKey(
     val topId: String,
@@ -1808,24 +1538,7 @@ data class WearUndoEvent(
     val snapshot: List<ClothingItem> = emptyList()
 )
 
-private data class ColorWishPreference(
-    val type: ClothingType,
-    val colorHex: String,
-    val colorLabel: String
-)
-
-private data class ColorWishDialogState(
-    val isVisible: Boolean = false,
-    val selectedType: ClothingType? = null,
-    val selectedColorHex: String? = null
-)
-
-private data class CasualForecastSelection(
-    val day: CasualForecastDay = CasualForecastDay.TODAY,
-    val segment: CasualForecastSegment = CasualForecastSegment.MORNING
-)
-
-private data class CombinedInputs(
+    private data class CombinedInputs(
     val preferences: UserPreferences,
     val items: List<ClothingItem>,
     val weather: WeatherSnapshot,
@@ -1834,10 +1547,6 @@ private data class CombinedInputs(
     val casualSelection: CasualForecastSelection
 )
 
-private data class CasualForecastComputation(
-    val uiState: CasualForecastUiState? = null,
-    val resolvedSelection: CasualForecastSelection? = null
-)
 
 private data class BaseInputsBuilder(
     val preferences: UserPreferences,
@@ -1904,19 +1613,21 @@ private data class WeatherRefreshStatus(
     val errorMessage: UiMessage? = null
 )
 
-private fun LocationSearchState.toUiState(): LocationSearchUiState = LocationSearchUiState(
-    isVisible = isVisible,
-    query = query,
-    isSearching = isLoading,
-    results = results.mapIndexed { index, result ->
-        LocationSearchResultUiState(
-            id = index.toString(),
-            title = result.title,
-            subtitle = result.subtitle
-        )
-    },
-    errorMessage = errorMessage
-)
+    private fun LocationSearchState.toUiState(): LocationSearchUiState = LocationSearchUiState(
+        isVisible = isVisible,
+        query = query,
+        isSearching = isLoading,
+        results = results.mapIndexed { index, result ->
+            LocationSearchResultUiState(
+                id = index.toString(),
+                title = result.title,
+                subtitle = result.subtitle,
+                latitude = result.latitude,
+                longitude = result.longitude
+            )
+        },
+        errorMessage = errorMessage
+    )
 
 private fun MapPickerState.toUiState(): MapPickerUiState = MapPickerUiState(
     isVisible = isVisible,

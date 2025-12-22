@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -190,7 +191,7 @@ fun OutfitCardItem(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                imageVector = item.icon,
+                painter = painterResource(id = item.icon),
                 contentDescription = item.name,
                 tint = item.color,
                 modifier = Modifier

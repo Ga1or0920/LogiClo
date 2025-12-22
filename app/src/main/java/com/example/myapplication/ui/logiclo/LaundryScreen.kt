@@ -10,6 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircleOutline
 import androidx.compose.material.icons.filled.DirtyLens
 import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -31,9 +32,13 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun LaundryScreen(viewModel: LogiCloViewModel) {
+    val uiState by viewModel.uiState.collectAsState()
     val pagerState = rememberPagerState(pageCount = { 2 })
     val scope = rememberCoroutineScope()
     val tabs = listOf("🏠 自宅洗い", "🏬 クリーニング")
+
+    val dirtyHomeItems = uiState.inventory.filter { it.isDirty && it.cleaningType == CleaningType.HOME }
+    val dirtyDryItems = uiState.inventory.filter { it.isDirty && it.cleaningType == CleaningType.DRY }
 
     Scaffold(
         topBar = {
@@ -62,13 +67,13 @@ fun LaundryScreen(viewModel: LogiCloViewModel) {
             ) { page ->
                 when (page) {
                     0 -> LaundryList(
-                        items = viewModel.dirtyHomeItems,
-                        actionLabel = "洗濯完了 (Wash All)",
-                        onAction = { viewModel.washAllHomeItems() },
+                        items = dirtyHomeItems,
+                        actionLabel = "☑を洗濯する",
+                        onAction = { ids -> viewModel.washSelectedItems(ids) },
                         emptyMsg = "洗濯カゴは空です✨"
                     )
                     1 -> LaundryList(
-                        items = viewModel.dirtyDryItems,
+                        items = dirtyDryItems,
                         actionLabel = "店に出す / 受け取る",
                         onAction = { /* Implement dry cleaning logic */ },
                         emptyMsg = "クリーニング予定はありません"
@@ -83,9 +88,14 @@ fun LaundryScreen(viewModel: LogiCloViewModel) {
 private fun LaundryList(
     items: List<UiClothingItem>,
     actionLabel: String,
-    onAction: () -> Unit,
+    onAction: (List<String>) -> Unit,
     emptyMsg: String
 ) {
+    val checkedState = remember { mutableStateMapOf<String, Boolean>() }
+    items.forEach { item ->
+        checkedState.putIfAbsent(item.id, true)
+    }
+
     if (items.isEmpty()) {
         Box(
             modifier = Modifier.fillMaxSize(),
@@ -111,7 +121,7 @@ private fun LaundryList(
                     ListItem(
                         headlineContent = { Text(item.name) },
                         supportingContent = { Text("洗濯待ち") },
-                        leadingContent = { Icon(Icons.Default.DirtyLens, contentDescription = null, tint = TextGrey) }
+                        leadingContent = { Checkbox(checked = checkedState[item.id] ?: false, onCheckedChange = { checkedState[item.id] = it }) }
                     )
                 }
             }
@@ -121,7 +131,10 @@ private fun LaundryList(
             shadowElevation = 8.dp
         ) {
             Button(
-                onClick = onAction,
+                onClick = { 
+                    val selectedIds = checkedState.filter { it.value }.keys.toList()
+                    onAction(selectedIds)
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp)

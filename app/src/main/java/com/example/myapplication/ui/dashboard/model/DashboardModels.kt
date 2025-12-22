@@ -75,6 +75,19 @@ data class ColorWishPreferenceUi(
     val colorLabel: String
 )
 
+// Public model representing a saved color-wish preference used across UI components
+data class ColorWishPreference(
+    val type: ClothingType,
+    val colorHex: String,
+    val colorLabel: String
+)
+
+data class ColorWishDialogState(
+    val isVisible: Boolean = false,
+    val selectedType: ClothingType? = null,
+    val selectedColorHex: String? = null
+)
+
 data class ColorWishTypeOption(
     val type: ClothingType,
     val label: String
@@ -107,7 +120,9 @@ data class LocationSearchUiState(
 data class LocationSearchResultUiState(
     val id: String,
     val title: String,
-    val subtitle: String?
+    val subtitle: String?,
+    val latitude: Double = 0.0,
+    val longitude: Double = 0.0
 )
 
 data class MapPickerUiState(
