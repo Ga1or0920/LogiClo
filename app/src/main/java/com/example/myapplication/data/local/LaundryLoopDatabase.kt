@@ -105,8 +105,30 @@ abstract class LaundryLoopDatabase : RoomDatabase() {
 
         val MIGRATION_9_10: Migration = object : Migration(9, 10) {
             override fun migrate(database: SupportSQLiteDatabase) {
-                database.execSQL("ALTER TABLE clothing_items ADD COLUMN imageUrl TEXT")
-                database.execSQL("ALTER TABLE clothing_items ADD COLUMN lastWornEpochMillis INTEGER")
+                // カラムが存在しない場合のみ追加（重複エラー回避）
+                addColumnIfNotExists(database, "clothing_items", "imageUrl", "TEXT")
+                addColumnIfNotExists(database, "clothing_items", "lastWornEpochMillis", "INTEGER")
+            }
+        }
+
+        private fun addColumnIfNotExists(
+            database: SupportSQLiteDatabase,
+            tableName: String,
+            columnName: String,
+            columnType: String
+        ) {
+            val cursor = database.query("PRAGMA table_info($tableName)")
+            val columnExists = cursor.use {
+                val nameIndex = it.getColumnIndex("name")
+                while (it.moveToNext()) {
+                    if (it.getString(nameIndex) == columnName) {
+                        return@use true
+                    }
+                }
+                false
+            }
+            if (!columnExists) {
+                database.execSQL("ALTER TABLE $tableName ADD COLUMN $columnName $columnType")
             }
         }
 

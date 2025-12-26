@@ -10,8 +10,12 @@ import com.example.myapplication.ui.logiclo.LogiCloViewModel
 class MainActivity : ComponentActivity() {
 
     private val viewModel: LogiCloViewModel by viewModels {
+        val container = (application as LaundryLoopApplication).container
         LogiCloViewModel.Companion.Factory(
-            (application as LaundryLoopApplication).container.closetRepository
+            closetRepository = container.closetRepository,
+            locationSearchRepository = container.locationSearchRepository,
+            userPreferencesRepository = container.userPreferencesRepository,
+            weatherRepository = container.weatherRepository
         )
     }
 

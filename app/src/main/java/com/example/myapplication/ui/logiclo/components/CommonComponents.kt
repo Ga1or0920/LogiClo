@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -19,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -179,42 +181,94 @@ fun OutfitCardItem(
     label: String,
     onRemove: () -> Unit
 ) {
+    ClothingItemCard(
+        item = item,
+        label = label,
+        trailingContent = {
+            IconButton(onClick = onRemove) {
+                Icon(Icons.Default.Close, contentDescription = "Remove", tint = TextGrey)
+            }
+        }
+    )
+}
+
+/**
+ * 統一された服カードコンポーネント
+ * ホーム画面とクローゼット画面で共通使用
+ */
+@Composable
+fun ClothingItemCard(
+    item: UiClothingItem,
+    label: String? = null,
+    showBrand: Boolean = true,
+    trailingContent: @Composable (() -> Unit)? = null,
+    bottomContent: @Composable (() -> Unit)? = null
+) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                painter = painterResource(id = item.icon),
-                contentDescription = item.name,
-                tint = item.color,
-                modifier = Modifier
-                    .size(56.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.surface)
-                    .padding(12.dp)
-            )
-            Spacer(Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(label, style = MaterialTheme.typography.labelSmall, color = TextGrey, fontWeight = FontWeight.Bold)
-                Text(item.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(4.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Tag(text = "残り${item.maxWears - item.currentWears}回")
-                    if (item.maxWears == 1) {
-                        Tag(text = "毎回洗う", color = MaterialTheme.colorScheme.secondary)
+        Column {
+            Row(
+                modifier = Modifier.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // アイコンコンテナ
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        painter = painterResource(id = item.displayIcon),
+                        contentDescription = item.name,
+                        tint = item.color,
+                        modifier = Modifier.size(40.dp)
+                    )
+                }
+                Spacer(Modifier.width(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    if (label != null) {
+                        Text(
+                            label,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = TextGrey,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Text(
+                        item.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (showBrand && item.brand.isNotEmpty()) {
+                        Text(
+                            item.brand,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextGrey
+                        )
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        if (item.isDirty) {
+                            Tag(text = "洗濯待ち", color = MaterialTheme.colorScheme.error)
+                        } else {
+                            Tag(text = "残り${item.maxWears - item.currentWears}回")
+                        }
+                        if (item.maxWears == 1) {
+                            Tag(text = "毎回洗う", color = MaterialTheme.colorScheme.secondary)
+                        }
                     }
                 }
+                trailingContent?.invoke()
             }
-            IconButton(onClick = onRemove) {
-                Icon(Icons.Default.Close, contentDescription = "Remove", tint = TextGrey)
-            }
+            bottomContent?.invoke()
         }
     }
 }

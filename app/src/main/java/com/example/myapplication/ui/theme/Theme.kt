@@ -17,25 +17,27 @@ import com.example.myapplication.ui.theme.CardWhite
 import com.example.myapplication.ui.theme.Pink40
 import com.example.myapplication.ui.theme.Pink80
 import com.example.myapplication.ui.theme.TextBlack
-import com.example.myapplication.ui.theme.TextGrey // <-- ADDED THIS IMPORT
+import com.example.myapplication.ui.theme.TextGreyLight
+import com.example.myapplication.ui.theme.TextGreyDark
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
 private val DarkColorScheme = darkColorScheme(
-    primary = TextBlack,
+    primary = Color(0xFFE0E0E0),
     secondary = AccentBlue,
     tertiary = Pink80,
     background = Color(0xFF121212),
     surface = Color(0xFF1E1E1E),
-    onPrimary = Color.White,
+    onPrimary = Color(0xFF121212),
     onSecondary = Color.White,
     onTertiary = Color.White,
     onBackground = Color(0xFFEAEAEA),
     onSurface = Color(0xFFEAEAEA),
-    surfaceVariant = Color(0xFF1E1E1E),
-    outline = Color.White
+    surfaceVariant = Color(0xFF2A2A2A),
+    onSurfaceVariant = Color(0xFFB0B8BC),
+    outline = Color(0xFF8A9297)
 )
 
 private val LightColorScheme = lightColorScheme(
@@ -50,7 +52,8 @@ private val LightColorScheme = lightColorScheme(
     onBackground = TextBlack,
     onSurface = TextBlack,
     surfaceVariant = BgGrey,
-    outline = TextGrey
+    onSurfaceVariant = TextGreyLight,
+    outline = TextGreyLight
 )
 
 @Composable

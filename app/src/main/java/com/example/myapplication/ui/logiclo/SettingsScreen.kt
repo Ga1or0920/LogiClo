@@ -26,21 +26,27 @@ fun SettingsScreen(viewModel: LogiCloViewModel) {
     val uiState by viewModel.uiState.collectAsState()
     var showResetDialog by remember { mutableStateOf(false) }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Settings", fontWeight = FontWeight.Bold) },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    titleContentColor = MaterialTheme.colorScheme.onBackground
-                )
-            )
-        }
-    ) { paddingValues ->
-        LazyColumn(
-            modifier = Modifier.padding(paddingValues),
-            contentPadding = PaddingValues(vertical = 8.dp)
-        ) {
+    Scaffold { paddingValues ->
+        Column(modifier = Modifier.padding(paddingValues)) {
+            // ヘッダー
+            Surface(
+                shadowElevation = 4.dp,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp)
+                ) {
+                    Text(
+                        "設定",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            LazyColumn(
+                contentPadding = PaddingValues(vertical = 8.dp)
+            ) {
             item { SectionHeader("表示") }
             item {
                 ThemeSetting(
@@ -73,6 +79,7 @@ fun SettingsScreen(viewModel: LogiCloViewModel) {
                     isDestructive = true,
                     onClick = { showResetDialog = true }
                 )
+            }
             }
         }
     }
@@ -122,6 +129,12 @@ private fun ThemeSetting(
 ) {
     var expanded by remember { mutableStateOf(false) }
 
+    fun ThemeMode.toDisplayName(): String = when (this) {
+        ThemeMode.LIGHT -> "ライト"
+        ThemeMode.DARK -> "ダーク"
+        ThemeMode.SYSTEM -> "システム"
+    }
+
     ListItem(
         headlineContent = { Text("テーマ") },
         leadingContent = { Icon(Icons.Default.Brightness6, contentDescription = "Theme") },
@@ -131,7 +144,7 @@ private fun ThemeSetting(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.clickable { expanded = true }
                 ) {
-                    Text(currentTheme.name)
+                    Text(currentTheme.toDisplayName())
                     Icon(Icons.Default.ArrowDropDown, contentDescription = "Open theme options")
                 }
                 DropdownMenu(
@@ -140,7 +153,7 @@ private fun ThemeSetting(
                 ) {
                     ThemeMode.values().forEach { theme ->
                         DropdownMenuItem(
-                            text = { Text(theme.name) },
+                            text = { Text(theme.toDisplayName()) },
                             onClick = {
                                 onThemeChange(theme)
                                 expanded = false

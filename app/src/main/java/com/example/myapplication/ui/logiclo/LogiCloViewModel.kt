@@ -6,27 +6,49 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.myapplication.R
 import com.example.myapplication.data.repository.ClosetRepository
+import com.example.myapplication.data.repository.LocationSearchRepository
+import com.example.myapplication.data.repository.UserPreferencesRepository
+import com.example.myapplication.data.weather.WeatherRepository
 import com.example.myapplication.domain.model.ClothingCategory
 import com.example.myapplication.domain.model.ClothingType
 import com.example.myapplication.domain.model.LaundryStatus
 import com.example.myapplication.domain.model.ColorGroup
+import com.example.myapplication.domain.model.LocationSearchResult
 import com.example.myapplication.domain.model.Pattern
+import com.example.myapplication.domain.model.WeatherLocationOverride
+import com.example.myapplication.domain.model.WeatherSnapshot
+import com.example.myapplication.domain.model.CasualForecastDay
+import com.example.myapplication.domain.model.CasualForecastSegment
 import com.example.myapplication.domain.model.ClothingItem as DomainClothingItem
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.*
 import kotlin.random.Random
 
+private const val LOCATION_SEARCH_MIN_QUERY = 2
+private const val LOCATION_SEARCH_DEBOUNCE_MILLIS = 400L
+
 // =============================================================================
 // 2. Logic Controller (ViewModel)
 // =============================================================================
 class LogiCloViewModel(
-    private val closetRepository: ClosetRepository
+    private val closetRepository: ClosetRepository,
+    private val locationSearchRepository: LocationSearchRepository,
+    private val userPreferencesRepository: UserPreferencesRepository,
+    private val weatherRepository: WeatherRepository
 ) : ViewModel() {
 
     // --- UI State ---
     private val _uiState = MutableStateFlow(LogiCloUiState())
     val uiState = _uiState.asStateFlow()
+
+    // --- Location Search State ---
+    private val _locationSearchState = MutableStateFlow(LocationSearchState())
+    val locationSearchState = _locationSearchState.asStateFlow()
+    private var locationSearchJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -34,6 +56,22 @@ class LogiCloViewModel(
                 val uiItems = domainItems.map { it.toUiModel() }
                 _uiState.update { it.copy(inventory = uiItems) }
                 _refreshSuggestion()
+            }
+        }
+        // Observe weather changes and update UI
+        viewModelScope.launch {
+            weatherRepository.observeCurrentWeather().collect { weather ->
+                _uiState.update { it.copy(weather = weather) }
+                _refreshSuggestion()
+            }
+        }
+        // Observe user preferences for location override
+        viewModelScope.launch {
+            userPreferencesRepository.observe().collect { preferences ->
+                val override = preferences.weatherLocationOverride
+                val locationName = override?.label ?: "神戸市 (現在地)"
+                val isCustom = override != null
+                _uiState.update { it.copy(currentLocationName = locationName, isLocationCustom = isCustom) }
             }
         }
     }
@@ -80,6 +118,88 @@ class LogiCloViewModel(
         _uiState.update { it.copy(currentLocationName = name, isLocationCustom = isCustom) }
     }
 
+    // --- Location Search Actions ---
+    fun openLocationSearch() {
+        _locationSearchState.value = LocationSearchState(isVisible = true)
+    }
+
+    fun closeLocationSearch() {
+        locationSearchJob?.cancel()
+        locationSearchJob = null
+        _locationSearchState.value = LocationSearchState()
+    }
+
+    fun onLocationSearchQueryChanged(query: String) {
+        scheduleLocationSearch(query)
+    }
+
+    fun onLocationSearchResultSelected(result: LocationSearchResult) {
+        viewModelScope.launch {
+            userPreferencesRepository.update { current ->
+                current.copy(
+                    weatherLocationOverride = WeatherLocationOverride(
+                        label = result.title,
+                        latitude = result.latitude,
+                        longitude = result.longitude
+                    )
+                )
+            }
+            closeLocationSearch()
+        }
+    }
+
+    fun onUseCurrentLocation() {
+        viewModelScope.launch {
+            userPreferencesRepository.update { current ->
+                current.copy(weatherLocationOverride = null)
+            }
+            closeLocationSearch()
+        }
+    }
+
+    private fun scheduleLocationSearch(query: String) {
+        val trimmed = query.trim()
+        _locationSearchState.update { current ->
+            current.copy(
+                query = query,
+                errorMessage = null,
+                isLoading = trimmed.length >= LOCATION_SEARCH_MIN_QUERY,
+                results = emptyList()
+            )
+        }
+        locationSearchJob?.cancel()
+        if (trimmed.length < LOCATION_SEARCH_MIN_QUERY) {
+            return
+        }
+        locationSearchJob = viewModelScope.launch {
+            delay(LOCATION_SEARCH_DEBOUNCE_MILLIS)
+            try {
+                val results = locationSearchRepository.searchByName(trimmed)
+                _locationSearchState.update { current ->
+                    current.copy(
+                        isLoading = false,
+                        results = results,
+                        errorMessage = if (results.isEmpty()) "検索結果がありません" else null
+                    )
+                }
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+                _locationSearchState.update { current ->
+                    current.copy(
+                        isLoading = false,
+                        results = emptyList(),
+                        errorMessage = "検索に失敗しました"
+                    )
+                }
+            }
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        locationSearchJob?.cancel()
+    }
+
     fun setThemeMode(mode: ThemeMode) {
         _uiState.update { it.copy(themeMode = mode) }
     }
@@ -87,22 +207,108 @@ class LogiCloViewModel(
     private fun _resetTimeSelection() {
         val (newId, newLabel) = if (_uiState.value.selectedMode == AppMode.CASUAL) {
             if (_uiState.value.isTomorrow) "daytime" to "☀️ 日中 (10-17)"
-            else "spot" to "⏱️ スポット (+3h)"
+            else "spot" to "⏱️ 短時間 (+3h)"
         } else {
             "day" to "☀️ 日勤 (9-18)"
         }
         _uiState.update { it.copy(selectedTimeId = newId, selectedTimeLabel = newLabel) }
     }
 
+    /**
+     * 時間帯IDに応じたセグメントを取得
+     */
+    private fun getSegmentsForTimeId(timeId: String): List<CasualForecastSegment> {
+        return when (timeId) {
+            // 今日カジュアル
+            "spot" -> listOf(CasualForecastSegment.AFTERNOON)
+            "half" -> listOf(CasualForecastSegment.AFTERNOON, CasualForecastSegment.EVENING)
+            "full" -> listOf(CasualForecastSegment.MORNING, CasualForecastSegment.AFTERNOON, CasualForecastSegment.EVENING)
+            // 明日カジュアル
+            "daytime" -> listOf(CasualForecastSegment.MORNING, CasualForecastSegment.AFTERNOON)
+            "night" -> listOf(CasualForecastSegment.EVENING)
+            "allday" -> listOf(CasualForecastSegment.MORNING, CasualForecastSegment.AFTERNOON, CasualForecastSegment.EVENING)
+            // オフィス
+            "day" -> listOf(CasualForecastSegment.MORNING, CasualForecastSegment.AFTERNOON)
+            "evening" -> listOf(CasualForecastSegment.EVENING)
+            else -> listOf(CasualForecastSegment.MORNING, CasualForecastSegment.AFTERNOON, CasualForecastSegment.EVENING)
+        }
+    }
+
+    /**
+     * 今日/明日・時間帯に応じた体感温度を取得
+     */
+    private fun getEffectiveTempForTimeSlot(
+        weather: WeatherSnapshot?,
+        isTomorrow: Boolean,
+        timeId: String
+    ): Double {
+        if (weather == null) return 20.0
+
+        // 今日で短時間の場合は現在の天気を使用（より正確）
+        if (!isTomorrow && timeId in listOf("spot", "half")) {
+            return weather.apparentTemperatureCelsius
+        }
+
+        // それ以外はcasualSegmentSummariesから計算
+        val targetDay = if (isTomorrow) CasualForecastDay.TOMORROW else CasualForecastDay.TODAY
+        val targetSegments = getSegmentsForTimeId(timeId)
+
+        val matchingSummaries = weather.casualSegmentSummaries
+            .filter { it.day == targetDay && it.segment in targetSegments }
+
+        return if (matchingSummaries.isNotEmpty()) {
+            matchingSummaries
+                .map { it.averageApparentTemperatureCelsius }
+                .average()
+                .takeIf { !it.isNaN() } ?: 20.0
+        } else if (!isTomorrow) {
+            // 今日でセグメントデータがない場合は現在値にフォールバック
+            weather.apparentTemperatureCelsius
+        } else {
+            20.0
+        }
+    }
+
     private fun _refreshSuggestion() {
         val cleanItems = _uiState.value.inventory.filter { !it.isDirty }
+        val state = _uiState.value
 
         val tops = cleanItems.filter { it.type == ItemType.TOP }.toMutableList()
         val bottoms = cleanItems.filter { it.type == ItemType.BOTTOM }.toMutableList()
         val outers = cleanItems.filter { it.type == ItemType.OUTER }.toMutableList()
 
-        // Mock Filtering
-        if (_uiState.value.selectedMode == AppMode.OFFICE) {
+        // 体感温度を取得（室内の場合は室内設定温度、屋外の場合は今日/明日・時間帯に応じた体感温度）
+        val effectiveTemp = if (state.selectedEnv == EnvMode.INDOOR) {
+            state.indoorTargetTemp.toDouble()
+        } else {
+            getEffectiveTempForTimeSlot(
+                weather = state.weather,
+                isTomorrow = state.isTomorrow,
+                timeId = state.selectedTimeId
+            )
+        }
+
+        // 体感温度に基づくフィルタリング
+        when {
+            effectiveTemp < 15.0 -> {
+                // 寒い: 厚手・長袖を優先
+                tops.sortByDescending { it.thickness == Thickness.THICK }
+                tops.removeAll { it.sleeveLength == SleeveLength.SHORT && tops.any { t -> t.sleeveLength == SleeveLength.LONG } }
+            }
+            effectiveTemp < 20.0 -> {
+                // 涼しい: 普通の服、長袖を優先
+                tops.removeAll { it.sleeveLength == SleeveLength.SHORT && tops.any { t -> t.sleeveLength == SleeveLength.LONG } }
+            }
+            effectiveTemp > 25.0 -> {
+                // 暑い: 薄手・半袖を優先
+                tops.sortByDescending { it.thickness == Thickness.THIN || it.sleeveLength == SleeveLength.SHORT }
+                tops.removeAll { it.thickness == Thickness.THICK && tops.any { t -> t.thickness != Thickness.THICK } }
+            }
+            // 20-25℃は快適: フィルタリングなし
+        }
+
+        // モードによるフィルタリング
+        if (state.selectedMode == AppMode.OFFICE) {
             tops.removeAll { it.name.contains("パーカー") || it.name.contains("Tシャツ") }
             bottoms.removeAll { it.name.contains("デニム") }
         } else {
@@ -112,10 +318,22 @@ class LogiCloViewModel(
         val suggestedTop = if (tops.isNotEmpty()) tops.random(Random) else null
         val suggestedBottom = if (bottoms.isNotEmpty()) bottoms.random(Random) else null
 
-        val suggestedOuter = if (_uiState.value.selectedEnv == EnvMode.INDOOR || (_uiState.value.selectedMode == AppMode.CASUAL && _uiState.value.selectedTimeId == "spot")) {
-            null
-        } else {
-            if (outers.isNotEmpty()) outers.random(Random) else null
+        // アウターの判定: 寒い場合（<20℃）は推奨、暑い場合（>25℃）は不要
+        val needsOuter = effectiveTemp < 20.0 && state.selectedEnv != EnvMode.INDOOR
+        val suggestedOuter = when {
+            state.selectedEnv == EnvMode.INDOOR -> null
+            state.selectedMode == AppMode.CASUAL && state.selectedTimeId == "spot" && effectiveTemp > 15.0 -> null
+            needsOuter && outers.isNotEmpty() -> {
+                // 寒さに応じてアウターを選択
+                if (effectiveTemp < 10.0) {
+                    outers.filter { it.thickness == Thickness.THICK }.randomOrNull() ?: outers.random(Random)
+                } else {
+                    outers.random(Random)
+                }
+            }
+            effectiveTemp > 25.0 -> null
+            outers.isNotEmpty() -> outers.random(Random)
+            else -> null
         }
 
         _uiState.update {
@@ -345,11 +563,21 @@ class LogiCloViewModel(
     }
 
     companion object {
-        class Factory(private val closetRepository: ClosetRepository) : ViewModelProvider.Factory {
+        class Factory(
+            private val closetRepository: ClosetRepository,
+            private val locationSearchRepository: LocationSearchRepository,
+            private val userPreferencesRepository: UserPreferencesRepository,
+            private val weatherRepository: WeatherRepository
+        ) : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 if (modelClass.isAssignableFrom(LogiCloViewModel::class.java)) {
-                    return LogiCloViewModel(closetRepository) as T
+                    return LogiCloViewModel(
+                        closetRepository,
+                        locationSearchRepository,
+                        userPreferencesRepository,
+                        weatherRepository
+                    ) as T
                 }
                 throw IllegalArgumentException("Unknown ViewModel class")
             }
@@ -364,12 +592,15 @@ data class LogiCloUiState(
     val isTomorrow: Boolean = false,
     val selectedMode: AppMode = AppMode.CASUAL,
     val selectedEnv: EnvMode = EnvMode.OUTDOOR,
-    var selectedTimeLabel: String = "⏱️ スポット (+3h)",
+    var selectedTimeLabel: String = "⏱️ 短時間 (+3h)",
     var selectedTimeId: String = "spot",
     val indoorTargetTemp: Float = 22.0f,
     val currentLocationName: String = "神戸市 (現在地)",
     val isLocationCustom: Boolean = false,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
+
+    // Weather State
+    val weather: WeatherSnapshot? = null,
 
     // Inventory State
     val inventory: List<UiClothingItem> = emptyList(), // Changed from generateMockItems()
@@ -378,6 +609,15 @@ data class LogiCloUiState(
     val suggestedOuter: UiClothingItem? = null,
     val suggestedTop: UiClothingItem? = null,
     val suggestedBottom: UiClothingItem? = null
+)
+
+// --- Location Search State ---
+data class LocationSearchState(
+    val isVisible: Boolean = false,
+    val query: String = "",
+    val isLoading: Boolean = false,
+    val results: List<LocationSearchResult> = emptyList(),
+    val errorMessage: String? = null
 )
 
 // Represents system theme options

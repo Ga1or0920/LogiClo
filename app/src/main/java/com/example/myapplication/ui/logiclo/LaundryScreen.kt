@@ -1,11 +1,13 @@
 package com.example.myapplication.ui.logiclo
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircleOutline
 import androidx.compose.material.icons.filled.DirtyLens
@@ -17,6 +19,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -40,18 +44,24 @@ fun LaundryScreen(viewModel: LogiCloViewModel) {
     val dirtyHomeItems = uiState.inventory.filter { it.isDirty && it.cleaningType == CleaningType.HOME }
     val dirtyDryItems = uiState.inventory.filter { it.isDirty && it.cleaningType == CleaningType.DRY }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Laundry", fontWeight = FontWeight.Bold) },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    titleContentColor = MaterialTheme.colorScheme.onBackground
-                )
-            )
-        }
-    ) { paddingValues ->
+    Scaffold { paddingValues ->
         Column(modifier = Modifier.padding(paddingValues)) {
+            // ヘッダー
+            Surface(
+                shadowElevation = 4.dp,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp)
+                ) {
+                    Text(
+                        "洗濯",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
             TabRow(selectedTabIndex = pagerState.currentPage) {
                 tabs.forEachIndexed { index, title ->
                     Tab(
@@ -112,17 +122,68 @@ private fun LaundryList(
 
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(top = 8.dp, bottom = 80.dp),
+            verticalArrangement = Arrangement.spacedBy(0.dp),
             modifier = Modifier.fillMaxSize()
         ) {
             items(items) { item ->
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-                    ListItem(
-                        headlineContent = { Text(item.name) },
-                        supportingContent = { Text("洗濯待ち") },
-                        leadingContent = { Checkbox(checked = checkedState[item.id] ?: false, onCheckedChange = { checkedState[item.id] = it }) }
-                    )
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // チェックボックス
+                        Checkbox(
+                            checked = checkedState[item.id] ?: false,
+                            onCheckedChange = { checkedState[item.id] = it }
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        // アイコン
+                        Box(
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                painter = painterResource(id = item.displayIcon),
+                                contentDescription = item.name,
+                                tint = item.color,
+                                modifier = Modifier.size(40.dp)
+                            )
+                        }
+                        Spacer(Modifier.width(16.dp))
+                        // テキスト
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                item.name,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            if (item.brand.isNotEmpty()) {
+                                Text(
+                                    item.brand,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = TextGrey
+                                )
+                            }
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "洗濯待ち",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.error,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
                 }
             }
         }

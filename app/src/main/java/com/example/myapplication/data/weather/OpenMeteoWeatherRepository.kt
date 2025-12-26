@@ -74,7 +74,7 @@ class OpenMeteoWeatherRepository(
             "&longitude=${coordinates.longitude}" +
             "&daily=temperature_2m_max,temperature_2m_min" +
             "&hourly=relative_humidity_2m,apparent_temperature" +
-            "&current_weather=true" +
+            "&current=apparent_temperature,relative_humidity_2m,temperature_2m,weather_code" +
             "&timezone=auto"
     }
 
@@ -82,31 +82,45 @@ class OpenMeteoWeatherRepository(
         val json = JSONObject(response)
         val daily = json.optJSONObject("daily")
         val hourly = json.optJSONObject("hourly")
-        val currentWeather = json.optJSONObject("current_weather")
-        val minTemp = daily?.optJSONArray("temperature_2m_min")?.optDouble(0) ?: state.value.minTemperatureCelsius
-        val maxTemp = daily?.optJSONArray("temperature_2m_max")?.optDouble(0) ?: state.value.maxTemperatureCelsius
-        val apparentTemp = currentWeather?.optDouble("apparent_temperature") ?: state.value.apparentTemperatureCelsius
-        val humidityArray = hourly?.optJSONArray("relative_humidity_2m")
-        val humidity = humidityArray?.optDouble(0)?.toInt() ?: state.value.humidityPercent
+        val current = json.optJSONObject("current")
+        val minTemp = daily?.optJSONArray("temperature_2m_min")?.optDouble(0, Double.NaN)
+            ?.takeIf { !it.isNaN() }
+            ?: state.value.minTemperatureCelsius
+        val maxTemp = daily?.optJSONArray("temperature_2m_max")?.optDouble(0, Double.NaN)
+            ?.takeIf { !it.isNaN() }
+            ?: state.value.maxTemperatureCelsius
+        // 体感温度と湿度は "current" オブジェクトから取得
+        // has()でキーの存在を確認してから取得（キーがない場合の0.0を防ぐ）
+        val apparentTemp = if (current?.has("apparent_temperature") == true) {
+            current.optDouble("apparent_temperature", Double.NaN).takeIf { !it.isNaN() }
+        } else {
+            null
+        } ?: state.value.apparentTemperatureCelsius
+        val humidity = current?.optInt("relative_humidity_2m", -1)?.takeIf { it >= 0 }
+            ?: hourly?.optJSONArray("relative_humidity_2m")?.optDouble(0)?.toInt()
+            ?: state.value.humidityPercent
+        val weatherCode = if (current?.has("weather_code") == true) {
+            current.optInt("weather_code", -1).takeIf { it >= 0 } ?: 0
+        } else { 0 }
         val zone = resolveZone(json)
-        val updatedAt = parseUpdatedAt(json, zone) ?: InstantCompat.nowOrNull()
+        val updatedAt = parseUpdatedAt(current, zone) ?: InstantCompat.nowOrNull()
         val casualSummaries = parseCasualSummaries(hourly, zone)
         return WeatherSnapshot(
             minTemperatureCelsius = minTemp,
             maxTemperatureCelsius = maxTemp,
             apparentTemperatureCelsius = apparentTemp,
             humidityPercent = humidity,
+            weatherCode = weatherCode,
             updatedAt = updatedAt,
             casualSegmentSummaries = casualSummaries
         )
     }
 
-    private fun parseUpdatedAt(json: JSONObject, zone: ZoneId?): Instant? {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+    private fun parseUpdatedAt(current: JSONObject?, zone: ZoneId?): Instant? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || current == null) {
             return null
         }
-        val currentWeather = json.optJSONObject("current_weather") ?: return null
-        val timeString = currentWeather.optString("time").takeIf { it.isNotBlank() } ?: return null
+        val timeString = current.optString("time").takeIf { it.isNotBlank() } ?: return null
         return runCatching {
             val localDateTime = LocalDateTime.parse(timeString)
             val resolvedZone = zone ?: ZoneId.systemDefault()

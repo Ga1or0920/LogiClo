@@ -31,10 +31,10 @@ import androidx.navigation.compose.rememberNavController
 import com.example.myapplication.ui.theme.LogiCloTheme
 
 sealed class Screen(val route: String, val label: String, val selectedIcon: ImageVector, val unselectedIcon: ImageVector) {
-    object Dashboard : Screen("dashboard", "Home", Icons.Filled.Home, Icons.Outlined.Home)
-    object Closet : Screen("closet", "Closet", Icons.Filled.Checkroom, Icons.Outlined.Checkroom)
-    object Laundry : Screen("laundry", "Laundry", Icons.Filled.LocalLaundryService, Icons.Outlined.LocalLaundryService)
-    object Settings : Screen("settings", "Settings", Icons.Filled.Settings, Icons.Outlined.Settings)
+    object Dashboard : Screen("dashboard", "ホーム", Icons.Filled.Home, Icons.Outlined.Home)
+    object Closet : Screen("closet", "クローゼット", Icons.Filled.Checkroom, Icons.Outlined.Checkroom)
+    object Laundry : Screen("laundry", "洗濯", Icons.Filled.LocalLaundryService, Icons.Outlined.LocalLaundryService)
+    object Settings : Screen("settings", "設定", Icons.Filled.Settings, Icons.Outlined.Settings)
 }
 
 val bottomNavItems = listOf(

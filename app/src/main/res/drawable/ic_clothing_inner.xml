@@ -3,11 +3,36 @@
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
+    <!-- タンクトップ/インナー - 洗練されたデザイン -->
+    <!-- 本体 -->
     <path
-        android:pathData="M8,4 L8,7 L7,8 L7,21 L17,21 L17,8 L16,7 L16,4 L13,4 L13,7 L11,7 L11,4 Z"
+        android:pathData="M9,3 L8,4 L7,6 L7,20 L17,20 L17,6 L16,4 L15,3"
         android:strokeWidth="1.5"
         android:strokeColor="#FF000000"
         android:fillColor="#00000000"
         android:strokeLineJoin="round"
+        android:strokeLineCap="round" />
+    <!-- 肩紐左 -->
+    <path
+        android:pathData="M9,3 L9,6 L10.5,7"
+        android:strokeWidth="1.5"
+        android:strokeColor="#FF000000"
+        android:fillColor="#00000000"
+        android:strokeLineJoin="round"
+        android:strokeLineCap="round" />
+    <!-- 肩紐右 -->
+    <path
+        android:pathData="M15,3 L15,6 L13.5,7"
+        android:strokeWidth="1.5"
+        android:strokeColor="#FF000000"
+        android:fillColor="#00000000"
+        android:strokeLineJoin="round"
+        android:strokeLineCap="round" />
+    <!-- 襟ぐり -->
+    <path
+        android:pathData="M10.5,7 Q12,9 13.5,7"
+        android:strokeWidth="1.5"
+        android:strokeColor="#FF000000"
+        android:fillColor="#00000000"
         android:strokeLineCap="round" />
 </vector>

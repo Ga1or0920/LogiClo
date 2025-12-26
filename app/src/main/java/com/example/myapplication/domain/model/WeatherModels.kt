@@ -7,6 +7,7 @@ data class WeatherSnapshot(
     val maxTemperatureCelsius: Double,
     val apparentTemperatureCelsius: Double,
     val humidityPercent: Int,
+    val weatherCode: Int = 0,
     val updatedAt: Instant? = null,
     val casualSegmentSummaries: List<CasualForecastSegmentSummary> = emptyList()
 )

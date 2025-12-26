@@ -30,7 +30,20 @@ data class UiClothingItem(
     var isDirty: Boolean = false,
     val cleaningType: CleaningType = CleaningType.HOME,
     val fit: FitType = FitType.REGULAR,
-)
+    val comfortMinCelsius: Double? = null,
+    val comfortMaxCelsius: Double? = null,
+) {
+    /** 袖丈に応じた表示用アイコンを返す */
+    val displayIcon: Int
+        get() = when (type) {
+            ItemType.TOP -> when (sleeveLength) {
+                SleeveLength.LONG -> R.drawable.ic_clothing_top_long
+                else -> R.drawable.ic_clothing_top
+            }
+            ItemType.OUTER -> R.drawable.ic_clothing_outer
+            ItemType.BOTTOM -> R.drawable.ic_clothing_bottom
+        }
+}
 
 // Dummy data generation
 fun generateMockItems(): List<UiClothingItem> {

@@ -17,6 +17,9 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.myapplication.domain.model.CasualForecastDay
+import com.example.myapplication.domain.model.CasualForecastSegment
+import com.example.myapplication.domain.model.WeatherSnapshot
 import com.example.myapplication.ui.logiclo.components.*
 import com.example.myapplication.ui.theme.LogiCloTheme
 import com.example.myapplication.ui.theme.TextGrey
@@ -29,9 +32,9 @@ import com.example.myapplication.ui.theme.TextGrey
 @Composable
 fun DashboardScreen(viewModel: LogiCloViewModel) {
     val uiState by viewModel.uiState.collectAsState()
-    var showLocationSheet by remember { mutableStateOf(false) }
+    val locationSearchState by viewModel.locationSearchState.collectAsState()
     var showTempSheet by remember { mutableStateOf(false) }
-    
+
     // A simple way to show a snackbar message
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -43,7 +46,7 @@ fun DashboardScreen(viewModel: LogiCloViewModel) {
             Header(
                 uiState = uiState,
                 onDateChange = { viewModel.setDate(it) },
-                onLocationClick = { showLocationSheet = true },
+                onLocationClick = { viewModel.openLocationSearch() },
                 onModeChange = { viewModel.setMode(it) },
                 onTimeChange = { id, label -> viewModel.setTimeSelection(id, label) },
                 onEnvChange = { viewModel.setEnv(it) }
@@ -67,10 +70,21 @@ fun DashboardScreen(viewModel: LogiCloViewModel) {
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             item {
+                // 今日/明日・時間帯に応じた天気データを取得
+                val weatherData = getWeatherDataForTimeSlot(
+                    weather = uiState.weather,
+                    isTomorrow = uiState.isTomorrow,
+                    timeId = uiState.selectedTimeId
+                )
+
                 WeatherInfo(
                     isTomorrow = uiState.isTomorrow,
                     selectedEnv = uiState.selectedEnv,
                     indoorTargetTemp = uiState.indoorTargetTemp,
+                    locationName = uiState.currentLocationName.replace(" (現在地)", ""),
+                    apparentTemp = weatherData.first,
+                    humidity = weatherData.second,
+                    weatherCode = weatherData.third,
                     onIndoorClick = { showTempSheet = true }
                 )
             }
@@ -103,13 +117,13 @@ fun DashboardScreen(viewModel: LogiCloViewModel) {
         }
     }
 
-    if (showLocationSheet) {
+    if (locationSearchState.isVisible) {
         LocationSearchSheet(
-            onDismiss = { showLocationSheet = false },
-            onLocationSelected = { name, isCustom ->
-                viewModel.setLocation(name, isCustom)
-                showLocationSheet = false
-            }
+            searchState = locationSearchState,
+            onDismiss = { viewModel.closeLocationSearch() },
+            onQueryChanged = { viewModel.onLocationSearchQueryChanged(it) },
+            onResultSelected = { viewModel.onLocationSearchResultSelected(it) },
+            onUseCurrentLocation = { viewModel.onUseCurrentLocation() }
         )
     }
 
@@ -141,7 +155,7 @@ private fun Header(
                 )
             } else {
                 listOf(
-                    "spot" to "⏱️ スポット (+3h)",
+                    "spot" to "⏱️ 短時間 (+3h)",
                     "half" to "🌤️ 半日 (+6h)",
                     "full" to "📅 終日 (〜22時)"
                 )
@@ -196,10 +210,10 @@ private fun Header(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 SlidingToggle(
-                    labels = listOf("Casual", "Office"),
-                    icons = listOf(Icons.Default.Home, Icons.Default.BusinessCenter),
-                    selectedIndex = if (uiState.selectedMode == AppMode.CASUAL) 0 else 1,
-                    onChanged = { onModeChange(if (it == 0) AppMode.CASUAL else AppMode.OFFICE) },
+                    labels = listOf("仕事", "休日"),
+                    icons = listOf(Icons.Default.BusinessCenter, Icons.Default.Home),
+                    selectedIndex = if (uiState.selectedMode == AppMode.OFFICE) 0 else 1,
+                    onChanged = { onModeChange(if (it == 0) AppMode.OFFICE else AppMode.CASUAL) },
                     modifier = Modifier.weight(1f)
                 )
 
@@ -225,10 +239,37 @@ private fun WeatherInfo(
     isTomorrow: Boolean,
     selectedEnv: EnvMode,
     indoorTargetTemp: Float,
+    locationName: String,
+    apparentTemp: Double?,
+    humidity: Int?,
+    weatherCode: Int?,
     onIndoorClick: () -> Unit
 ) {
     val isIndoor = selectedEnv == EnvMode.INDOOR
-    val displayTemp = if (isIndoor) "${indoorTargetTemp.toInt()}℃" else "22℃"
+    val displayTemp = if (isIndoor) {
+        "${indoorTargetTemp.toInt()}℃"
+    } else {
+        apparentTemp?.let { "${it.toInt()}℃" } ?: "--℃"
+    }
+
+    // WMO Weather Code に基づいてアイコンを選択
+    val weatherIcon = if (isIndoor) {
+        Icons.Default.Thermostat
+    } else {
+        when (weatherCode) {
+            0 -> Icons.Default.WbSunny                      // 快晴
+            1, 2 -> Icons.Default.WbSunny                   // 晴れ〜やや曇り
+            3 -> Icons.Default.WbCloudy                     // 曇り
+            in 45..48 -> Icons.Default.Cloud                // 霧
+            in 51..57 -> Icons.Default.Grain                // 霧雨
+            in 61..67 -> Icons.Default.WaterDrop            // 雨
+            in 71..77 -> Icons.Default.AcUnit               // 雪
+            in 80..82 -> Icons.Default.WaterDrop            // にわか雨
+            in 85..86 -> Icons.Default.AcUnit               // にわか雪
+            in 95..99 -> Icons.Default.Bolt                 // 雷雨
+            else -> Icons.Default.WbCloudy
+        }
+    }
 
     val modifier = if (isIndoor) Modifier.clickable(onClick = onIndoorClick) else Modifier
 
@@ -237,7 +278,7 @@ private fun WeatherInfo(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
-            text = if (isTomorrow) "明日の神戸" else "今日の神戸",
+            text = if (isTomorrow) "明日の$locationName" else "今日の$locationName",
             style = MaterialTheme.typography.bodySmall,
             color = TextGrey
         )
@@ -246,14 +287,14 @@ private fun WeatherInfo(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                if (isIndoor) Icons.Default.Thermostat else Icons.Default.WbCloudy,
+                weatherIcon,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.secondary,
                 modifier = Modifier.size(20.dp)
             )
             Spacer(Modifier.width(8.dp))
             Text(
-                text = "${if (isIndoor) "室内設定" else "体感"} $displayTemp ${if (isIndoor) "" else "(湿度 45%)"}",
+                text = "${if (isIndoor) "室内設定" else "体感"} $displayTemp",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold
             )
@@ -280,7 +321,7 @@ private fun BottomAction(onClick: () -> Unit) {
                 .height(56.dp),
             shape = RoundedCornerShape(16.dp)
         ) {
-            Text("これを着る (Wear This)", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Text("これを着る", fontWeight = FontWeight.Bold, fontSize = 16.sp)
         }
     }
 }
@@ -288,20 +329,12 @@ private fun BottomAction(onClick: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun LocationSearchSheet(
+    searchState: LocationSearchState,
     onDismiss: () -> Unit,
-    onLocationSelected: (name: String, isCustom: Boolean) -> Unit
+    onQueryChanged: (String) -> Unit,
+    onResultSelected: (com.example.myapplication.domain.model.LocationSearchResult) -> Unit,
+    onUseCurrentLocation: () -> Unit
 ) {
-    val mockResults = remember {
-        listOf(
-            "ユニバーサル・スタジオ・ジャパン",
-            "東京駅",
-            "神戸市",
-            "大阪市"
-        )
-    }
-    var query by remember { mutableStateOf("") }
-    val filteredResults = if (query.isEmpty()) mockResults else mockResults.filter { it.contains(query, ignoreCase = true) }
-
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
@@ -315,7 +348,7 @@ private fun LocationSearchSheet(
                     .padding(vertical = 8.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Text("場所を変更", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text("場所を検索", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 IconButton(onClick = onDismiss, modifier = Modifier.align(Alignment.CenterEnd)) {
                     Icon(Icons.Default.Close, contentDescription = "Close")
                 }
@@ -323,30 +356,49 @@ private fun LocationSearchSheet(
 
             // Search Field
             OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
+                value = searchState.query,
+                onValueChange = onQueryChanged,
                 label = { Text("地名・施設名 (例: ユニバ)") },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                trailingIcon = {
+                    if (searchState.isLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            strokeWidth = 2.dp
+                        )
+                    }
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp)
             )
 
+            // Error or empty message
+            searchState.errorMessage?.let { message ->
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                )
+            }
+
             // Options
             LazyColumn(modifier = Modifier.padding(horizontal = 16.dp)) {
                 item {
                     ListItem(
-                        headlineContent = { Text("現在地を使う (GPS)") },
+                        headlineContent = { Text("現在地を使う (デフォルト)") },
                         leadingContent = { Icon(Icons.Default.MyLocation, contentDescription = null, tint = MaterialTheme.colorScheme.secondary) },
-                        modifier = Modifier.clickable { onLocationSelected("神戸市 (現在地)", false) }
+                        modifier = Modifier.clickable { onUseCurrentLocation() }
                     )
                 }
-                items(filteredResults.size) { index ->
-                    val result = filteredResults[index]
+                items(searchState.results.size) { index ->
+                    val result = searchState.results[index]
                     ListItem(
-                        headlineContent = { Text(result) },
+                        headlineContent = { Text(result.title) },
+                        supportingContent = result.subtitle?.let { { Text(it) } },
                         leadingContent = { Icon(Icons.Default.Place, contentDescription = null) },
-                        modifier = Modifier.clickable { onLocationSelected(result, true) }
+                        modifier = Modifier.clickable { onResultSelected(result) }
                     )
                 }
             }
@@ -395,6 +447,65 @@ private fun IndoorTempSheet(
     }
 }
 
+/**
+ * 時間帯IDに応じたセグメントを取得
+ */
+private fun getSegmentsForTimeId(timeId: String): List<CasualForecastSegment> {
+    return when (timeId) {
+        // 今日カジュアル
+        "spot" -> listOf(CasualForecastSegment.AFTERNOON) // 現在時刻付近
+        "half" -> listOf(CasualForecastSegment.AFTERNOON, CasualForecastSegment.EVENING)
+        "full" -> listOf(CasualForecastSegment.MORNING, CasualForecastSegment.AFTERNOON, CasualForecastSegment.EVENING)
+        // 明日カジュアル
+        "daytime" -> listOf(CasualForecastSegment.MORNING, CasualForecastSegment.AFTERNOON)
+        "night" -> listOf(CasualForecastSegment.EVENING)
+        "allday" -> listOf(CasualForecastSegment.MORNING, CasualForecastSegment.AFTERNOON, CasualForecastSegment.EVENING)
+        // オフィス
+        "day" -> listOf(CasualForecastSegment.MORNING, CasualForecastSegment.AFTERNOON)
+        "evening" -> listOf(CasualForecastSegment.EVENING)
+        else -> listOf(CasualForecastSegment.MORNING, CasualForecastSegment.AFTERNOON, CasualForecastSegment.EVENING)
+    }
+}
+
+/**
+ * 今日/明日・時間帯に応じた天気データを取得
+ */
+private fun getWeatherDataForTimeSlot(
+    weather: WeatherSnapshot?,
+    isTomorrow: Boolean,
+    timeId: String
+): Triple<Double?, Int?, Int?> {
+    if (weather == null) return Triple(null, null, null)
+
+    // 今日で現在の天気がある場合は現在値を使用（より正確）
+    if (!isTomorrow && timeId in listOf("spot", "half")) {
+        return Triple(
+            weather.apparentTemperatureCelsius,
+            weather.humidityPercent,
+            weather.weatherCode
+        )
+    }
+
+    // それ以外はcasualSegmentSummariesから計算
+    val targetDay = if (isTomorrow) CasualForecastDay.TOMORROW else CasualForecastDay.TODAY
+    val targetSegments = getSegmentsForTimeId(timeId)
+
+    val matchingSummaries = weather.casualSegmentSummaries
+        .filter { it.day == targetDay && it.segment in targetSegments }
+
+    return if (matchingSummaries.isNotEmpty()) {
+        val avgTemp = matchingSummaries
+            .map { it.averageApparentTemperatureCelsius }
+            .average()
+            .takeIf { !it.isNaN() }
+        Triple(avgTemp, null, null) // 予報は湿度・天気コード未対応
+    } else if (!isTomorrow) {
+        // 今日でセグメントデータがない場合は現在値にフォールバック
+        Triple(weather.apparentTemperatureCelsius, weather.humidityPercent, weather.weatherCode)
+    } else {
+        Triple(null, null, null)
+    }
+}
 
 // --- Preview ---
 /*
@@ -419,7 +530,13 @@ fun DashboardScreenDarkPreview() {
 @Composable
 private fun LocationSheetPreview(){
     LogiCloTheme {
-        LocationSearchSheet(onDismiss = {}, onLocationSelected = {_,_ ->})
+        LocationSearchSheet(
+            searchState = LocationSearchState(),
+            onDismiss = {},
+            onQueryChanged = {},
+            onResultSelected = {},
+            onUseCurrentLocation = {}
+        )
     }
 }
 
