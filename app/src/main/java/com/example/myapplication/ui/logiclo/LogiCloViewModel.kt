@@ -38,7 +38,8 @@ class LogiCloViewModel(
     private val closetRepository: ClosetRepository,
     private val locationSearchRepository: LocationSearchRepository,
     private val userPreferencesRepository: UserPreferencesRepository,
-    private val weatherRepository: WeatherRepository
+    private val weatherRepository: WeatherRepository,
+    private val wearFeedbackRepository: com.example.myapplication.data.repository.WearFeedbackRepository? = null
 ) : ViewModel() {
 
     // --- UI State ---
@@ -236,12 +237,16 @@ class LogiCloViewModel(
 
     /**
      * 今日/明日・時間帯に応じた体感温度を取得
+     * デバッグオーバーライドが設定されている場合はそれを優先
      */
     private fun getEffectiveTempForTimeSlot(
         weather: WeatherSnapshot?,
         isTomorrow: Boolean,
         timeId: String
     ): Double {
+        // デバッグオーバーライドがある場合は常にそれを使用
+        _uiState.value.debugTemperatureOverride?.let { return it }
+
         if (weather == null) return 20.0
 
         // 今日で短時間の場合は現在の天気を使用（より正確）
@@ -267,6 +272,23 @@ class LogiCloViewModel(
         } else {
             20.0
         }
+    }
+
+    // --- Debug Override Functions ---
+    fun setDebugTemperatureOverride(temp: Double?) {
+        _uiState.update { it.copy(debugTemperatureOverride = temp) }
+        _refreshSuggestion()
+    }
+
+    fun setDebugWeatherCodeOverride(code: Int?) {
+        _uiState.update { it.copy(debugWeatherCodeOverride = code) }
+        _refreshSuggestion()
+    }
+
+    fun getEffectiveWeatherCode(): Int {
+        return _uiState.value.debugWeatherCodeOverride
+            ?: _uiState.value.weather?.weatherCode
+            ?: 0
     }
 
     private fun _refreshSuggestion() {
@@ -318,20 +340,24 @@ class LogiCloViewModel(
         val suggestedTop = if (tops.isNotEmpty()) tops.random(Random) else null
         val suggestedBottom = if (bottoms.isNotEmpty()) bottoms.random(Random) else null
 
-        // アウターの判定: 寒い場合（<20℃）は推奨、暑い場合（>25℃）は不要
-        val needsOuter = effectiveTemp < 20.0 && state.selectedEnv != EnvMode.INDOOR
+        // アウターの判定: 常に外気温を基準に判定（室内モードでも外出時にアウターが必要）
+        val outdoorTemp = getEffectiveTempForTimeSlot(
+            weather = state.weather,
+            isTomorrow = state.isTomorrow,
+            timeId = state.selectedTimeId
+        )
+        val needsOuter = outdoorTemp < 20.0
         val suggestedOuter = when {
-            state.selectedEnv == EnvMode.INDOOR -> null
-            state.selectedMode == AppMode.CASUAL && state.selectedTimeId == "spot" && effectiveTemp > 15.0 -> null
+            state.selectedMode == AppMode.CASUAL && state.selectedTimeId == "spot" && outdoorTemp > 15.0 -> null
             needsOuter && outers.isNotEmpty() -> {
                 // 寒さに応じてアウターを選択
-                if (effectiveTemp < 10.0) {
+                if (outdoorTemp < 10.0) {
                     outers.filter { it.thickness == Thickness.THICK }.randomOrNull() ?: outers.random(Random)
                 } else {
                     outers.random(Random)
                 }
             }
-            effectiveTemp > 25.0 -> null
+            outdoorTemp > 25.0 -> null
             outers.isNotEmpty() -> outers.random(Random)
             else -> null
         }
@@ -352,30 +378,195 @@ class LogiCloViewModel(
         }
     }
 
+    /**
+     * 指定したタイプの服を別の候補に変更する
+     */
+    fun changeOutfitItem(type: ItemType) {
+        val state = _uiState.value
+        val cleanItems = state.inventory.filter { !it.isDirty }
+
+        when (type) {
+            ItemType.OUTER -> {
+                val currentOuter = state.suggestedOuter
+                val outers = cleanItems.filter { it.type == ItemType.OUTER && it.id != currentOuter?.id }
+                if (outers.isNotEmpty()) {
+                    _uiState.update { it.copy(suggestedOuter = outers.random(Random)) }
+                }
+            }
+            ItemType.TOP -> {
+                val currentTop = state.suggestedTop
+                val tops = cleanItems.filter { it.type == ItemType.TOP && it.id != currentTop?.id }
+                if (tops.isNotEmpty()) {
+                    _uiState.update { it.copy(suggestedTop = tops.random(Random)) }
+                }
+            }
+            ItemType.BOTTOM -> {
+                val currentBottom = state.suggestedBottom
+                val bottoms = cleanItems.filter { it.type == ItemType.BOTTOM && it.id != currentBottom?.id }
+                if (bottoms.isNotEmpty()) {
+                    _uiState.update { it.copy(suggestedBottom = bottoms.random(Random)) }
+                }
+            }
+        }
+    }
+
+    // Undo用に前回の状態を保存
+    private var lastWornItems: List<UiClothingItem> = emptyList()
+    // フィードバック用に着用時の基準温度を保存
+    private var lastWornBasisTemp: Double = 20.0
+
     fun wearCurrentOutfit(): String {
-        val isHotDay = _uiState.value.selectedEnv == EnvMode.OUTDOOR || (_uiState.value.selectedEnv == EnvMode.INDOOR && _uiState.value.indoorTargetTemp > 25)
+        val state = _uiState.value
+        // 体感気温が高い日（25°C以上）のみカウント+2
+        val basisTemp = when (state.selectedEnv) {
+            EnvMode.OUTDOOR -> getEffectiveTempForTimeSlot(
+                weather = state.weather,
+                isTomorrow = state.isTomorrow,
+                timeId = state.selectedTimeId
+            )
+            EnvMode.INDOOR -> state.indoorTargetTemp.toDouble()
+        }
+        val isHotDay = basisTemp >= 25.0
         val damage = if (isHotDay) 2 else 1
-        val logs = mutableListOf<String>()
+
+        // Undo用に現在の状態を保存
+        lastWornItems = listOfNotNull(
+            state.suggestedTop,
+            state.suggestedBottom,
+            state.suggestedOuter
+        )
+        lastWornBasisTemp = basisTemp
 
         _uiState.value.suggestedTop?.let { top ->
              viewModelScope.launch {
                  val newWears = top.currentWears + damage
                  val isDirty = newWears >= top.maxWears
-                 if (isDirty) {
-                     logs.add("${top.name}: 洗濯カゴへ")
-                 }
                  val status = if (isDirty) LaundryStatus.DIRTY else LaundryStatus.CLOSET
                  val currentWears = if (isDirty) 0 else newWears
-                 
+
                  val domainItem = top.toDomainModel().copy(currentWears = currentWears, status = status)
                  closetRepository.upsert(domainItem)
              }
         }
-        
-        // Note: Ideally we should update bottom and outer as well, but keeping it simple as per original logic for now.
-        // Also, logs update is tricky with async. For now, we return a message based on local prediction.
-        
-        return if (isHotDay) "☀️ 暑いため +2カウント (処理中)" else "記録しました (残り回数を更新)"
+
+        // フィードバック用に着用記録（通知は21時に送信される）
+        viewModelScope.launch {
+            wearFeedbackRepository?.recordWear(
+                topItemId = state.suggestedTop?.id,
+                bottomItemId = state.suggestedBottom?.id
+            )
+        }
+
+        // 基準温度を保存（後でフィードバック時に使用）
+        lastWornBasisTemp = basisTemp
+
+        return if (isHotDay) "☀️ 暑いため +2カウント" else "記録しました"
+    }
+
+    fun undoWearOutfit() {
+        if (lastWornItems.isEmpty()) return
+        viewModelScope.launch {
+            lastWornItems.forEach { item ->
+                val domainItem = item.toDomainModel()
+                closetRepository.upsert(domainItem)
+            }
+            lastWornItems = emptyList()
+        }
+        _uiState.update { it.copy(showFeedbackDialog = false) }
+    }
+
+    fun canUndoWear(): Boolean = lastWornItems.isNotEmpty()
+
+    // --- Feedback & Learning ---
+    fun dismissFeedbackDialog() {
+        _uiState.update { it.copy(showFeedbackDialog = false) }
+    }
+
+    fun submitFeedback(itemId: String, rating: com.example.myapplication.domain.model.WearFeedbackRating) {
+        viewModelScope.launch {
+            val item = _uiState.value.inventory.find { it.id == itemId } ?: return@launch
+            val basisTemp = _uiState.value.feedbackBasisTemp
+
+            // 学習アルゴリズム: 温度範囲を更新
+            val currentMin = item.comfortMinCelsius ?: 10.0
+            val currentMax = item.comfortMaxCelsius ?: 30.0
+
+            val (newMin, newMax) = when (rating) {
+                com.example.myapplication.domain.model.WearFeedbackRating.TOO_COLD -> {
+                    // 寒かった → 下限を引き上げ
+                    val updatedMin = maxOf(currentMin + 3.0, basisTemp + 1.0)
+                    Pair(updatedMin, currentMax)
+                }
+                com.example.myapplication.domain.model.WearFeedbackRating.TOO_WARM -> {
+                    // 暑かった → 上限を引き下げ
+                    val updatedMax = minOf(currentMax - 3.0, basisTemp - 1.0)
+                    Pair(currentMin, updatedMax)
+                }
+                com.example.myapplication.domain.model.WearFeedbackRating.JUST_RIGHT -> {
+                    // ちょうど良い → 変更なし
+                    Pair(currentMin, currentMax)
+                }
+            }
+
+            // 温度範囲を更新
+            val domainItem = item.toDomainModel().copy(
+                comfortMinCelsius = newMin,
+                comfortMaxCelsius = newMax
+            )
+            closetRepository.upsert(domainItem)
+        }
+    }
+
+    /**
+     * カスタム温度値付きでフィードバックを送信
+     * ユーザーがスライダーで調整した値を直接使用
+     */
+    fun submitFeedbackWithCustomTemp(
+        itemId: String,
+        rating: com.example.myapplication.domain.model.WearFeedbackRating,
+        customMinTemp: Double,
+        customMaxTemp: Double
+    ) {
+        viewModelScope.launch {
+            val item = _uiState.value.inventory.find { it.id == itemId } ?: return@launch
+
+            // ユーザーが指定したカスタム温度値を使用
+            val domainItem = item.toDomainModel().copy(
+                comfortMinCelsius = customMinTemp,
+                comfortMaxCelsius = customMaxTemp
+            )
+            closetRepository.upsert(domainItem)
+        }
+    }
+
+    fun getLastWornItems(): List<UiClothingItem> = lastWornItems
+
+    /**
+     * デバッグ用：フィードバックダイアログを手動で表示
+     * lastWornItemsが空の場合は現在の提案アイテムを使用
+     */
+    fun triggerFeedbackDialog() {
+        val state = _uiState.value
+        val items = if (lastWornItems.isNotEmpty()) {
+            lastWornItems
+        } else {
+            // lastWornItemsが空の場合、現在の提案アイテムを使用
+            listOfNotNull(state.suggestedTop, state.suggestedBottom, state.suggestedOuter)
+        }
+
+        if (items.isNotEmpty()) {
+            // フィードバック用にアイテムを設定
+            lastWornItems = items
+            val basisTemp = when (state.selectedEnv) {
+                EnvMode.OUTDOOR -> getEffectiveTempForTimeSlot(
+                    weather = state.weather,
+                    isTomorrow = state.isTomorrow,
+                    timeId = state.selectedTimeId
+                )
+                EnvMode.INDOOR -> state.indoorTargetTemp.toDouble()
+            }
+            _uiState.update { it.copy(showFeedbackDialog = true, feedbackBasisTemp = basisTemp) }
+        }
     }
 
     // --- Closet & Laundry Actions ---
@@ -456,6 +647,13 @@ class LogiCloViewModel(
             closetRepository.upsert(item.toDomainModel())
         }
     }
+
+    fun addItemWithStatus(item: UiClothingItem, status: LaundryStatus) {
+        viewModelScope.launch {
+            val domainItem = item.toDomainModel().copy(status = status)
+            closetRepository.upsert(domainItem)
+        }
+    }
     
     fun getSmartDefaults(categoryKey: String): Map<String, Any> {
         return when (categoryKey) {
@@ -504,6 +702,17 @@ class LogiCloViewModel(
             Color.Gray
         }
 
+        // Convert colorGroup to Japanese display name
+        val colorDisplayName = when (this.colorGroup) {
+            com.example.myapplication.domain.model.ColorGroup.MONOTONE -> "モノトーン"
+            com.example.myapplication.domain.model.ColorGroup.NAVY_BLUE -> "ネイビー/ブルー"
+            com.example.myapplication.domain.model.ColorGroup.VIVID -> "ビビッド"
+            com.example.myapplication.domain.model.ColorGroup.EARTH_TONE -> "アースカラー"
+            com.example.myapplication.domain.model.ColorGroup.PASTEL -> "パステル"
+            com.example.myapplication.domain.model.ColorGroup.OTHER -> "その他"
+            com.example.myapplication.domain.model.ColorGroup.UNKNOWN -> ""
+        }
+
         return UiClothingItem(
             id = this.id,
             name = this.name,
@@ -513,6 +722,7 @@ class LogiCloViewModel(
             sleeveLength = SleeveLength.values().find { it.name.equals(this.sleeveLength.name, true) } ?: SleeveLength.SHORT,
             thickness = Thickness.values().find { it.name.equals(this.thickness.name, true) } ?: Thickness.NORMAL,
             color = uiColor,
+            colorName = colorDisplayName,
             icon = uiIcon,
             maxWears = this.maxWears,
             currentWears = this.currentWears,
@@ -567,7 +777,8 @@ class LogiCloViewModel(
             private val closetRepository: ClosetRepository,
             private val locationSearchRepository: LocationSearchRepository,
             private val userPreferencesRepository: UserPreferencesRepository,
-            private val weatherRepository: WeatherRepository
+            private val weatherRepository: WeatherRepository,
+            private val wearFeedbackRepository: com.example.myapplication.data.repository.WearFeedbackRepository? = null
         ) : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -576,7 +787,8 @@ class LogiCloViewModel(
                         closetRepository,
                         locationSearchRepository,
                         userPreferencesRepository,
-                        weatherRepository
+                        weatherRepository,
+                        wearFeedbackRepository
                     ) as T
                 }
                 throw IllegalArgumentException("Unknown ViewModel class")
@@ -608,7 +820,15 @@ data class LogiCloUiState(
     // Suggestion State
     val suggestedOuter: UiClothingItem? = null,
     val suggestedTop: UiClothingItem? = null,
-    val suggestedBottom: UiClothingItem? = null
+    val suggestedBottom: UiClothingItem? = null,
+
+    // Debug Override State
+    val debugTemperatureOverride: Double? = null,  // nullの場合は通常の気温を使用
+    val debugWeatherCodeOverride: Int? = null,     // nullの場合は通常の天気を使用
+
+    // Feedback Dialog State
+    val showFeedbackDialog: Boolean = false,
+    val feedbackBasisTemp: Double = 20.0
 )
 
 // --- Location Search State ---

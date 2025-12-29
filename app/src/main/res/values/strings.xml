@@ -104,6 +104,7 @@
     <string name="main_menu_button_open_cd">メインメニューを開く</string>
     <string name="main_menu_indoor_temperature_placeholder">屋内の温度（℃）を入力</string>
     <string name="main_menu_indoor_temperature_clear">クリア</string>
+    <string name="main_menu_indoor_temperature_label">室内温度: %1$d℃</string>
     <string name="main_menu_save_button">保存</string>
     <string name="main_menu_save_dialog_title">保存しました</string>
     <string name="main_menu_save_dialog_message">設定を保存しました。</string>

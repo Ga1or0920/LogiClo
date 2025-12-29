@@ -15,7 +15,8 @@ class MainActivity : ComponentActivity() {
             closetRepository = container.closetRepository,
             locationSearchRepository = container.locationSearchRepository,
             userPreferencesRepository = container.userPreferencesRepository,
-            weatherRepository = container.weatherRepository
+            weatherRepository = container.weatherRepository,
+            wearFeedbackRepository = container.wearFeedbackRepository
         )
     }
 

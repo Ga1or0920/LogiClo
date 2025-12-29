@@ -1,14 +1,20 @@
 package com.example.myapplication.ui.logiclo
 
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -23,6 +29,7 @@ import com.example.myapplication.domain.model.WeatherSnapshot
 import com.example.myapplication.ui.logiclo.components.*
 import com.example.myapplication.ui.theme.LogiCloTheme
 import com.example.myapplication.ui.theme.TextGrey
+import com.example.myapplication.domain.model.WearFeedbackRating
 
 // =============================================================================
 // Screen 1: Dashboard
@@ -57,7 +64,15 @@ fun DashboardScreen(viewModel: LogiCloViewModel) {
                 onClick = {
                     val msg = viewModel.wearCurrentOutfit()
                     scope.launch {
-                        snackbarHostState.showSnackbar(msg)
+                        val result = snackbarHostState.showSnackbar(
+                            message = msg,
+                            actionLabel = "元に戻す",
+                            duration = SnackbarDuration.Short
+                        )
+                        if (result == SnackbarResult.ActionPerformed) {
+                            viewModel.undoWearOutfit()
+                            snackbarHostState.showSnackbar("元に戻しました")
+                        }
                     }
                 }
             )
@@ -77,14 +92,20 @@ fun DashboardScreen(viewModel: LogiCloViewModel) {
                     timeId = uiState.selectedTimeId
                 )
 
+                // デバッグオーバーライドを適用
+                val effectiveTemp = uiState.debugTemperatureOverride ?: weatherData.first
+                val effectiveWeatherCode = uiState.debugWeatherCodeOverride ?: weatherData.third
+                val isDebugMode = uiState.debugTemperatureOverride != null || uiState.debugWeatherCodeOverride != null
+
                 WeatherInfo(
                     isTomorrow = uiState.isTomorrow,
                     selectedEnv = uiState.selectedEnv,
                     indoorTargetTemp = uiState.indoorTargetTemp,
                     locationName = uiState.currentLocationName.replace(" (現在地)", ""),
-                    apparentTemp = weatherData.first,
+                    apparentTemp = effectiveTemp,
                     humidity = weatherData.second,
-                    weatherCode = weatherData.third,
+                    weatherCode = effectiveWeatherCode,
+                    isDebugMode = isDebugMode,
                     onIndoorClick = { showTempSheet = true }
                 )
             }
@@ -105,13 +126,13 @@ fun DashboardScreen(viewModel: LogiCloViewModel) {
                 }
             } else {
                 uiState.suggestedOuter?.let {
-                    item { OutfitCardItem(item = it, label = "Outer", onRemove = { viewModel.markAsActuallyDirty(it) }) }
+                    item { OutfitCardItem(item = it, label = "アウター", onChangeItem = { viewModel.changeOutfitItem(ItemType.OUTER) }) }
                 }
                 uiState.suggestedTop?.let {
-                    item { OutfitCardItem(item = it, label = "Top", onRemove = { viewModel.markAsActuallyDirty(it) }) }
+                    item { OutfitCardItem(item = it, label = "トップス", onChangeItem = { viewModel.changeOutfitItem(ItemType.TOP) }) }
                 }
                 uiState.suggestedBottom?.let {
-                    item { OutfitCardItem(item = it, label = "Bottom", onRemove = { viewModel.markAsActuallyDirty(it) }) }
+                    item { OutfitCardItem(item = it, label = "ボトムス", onChangeItem = { viewModel.changeOutfitItem(ItemType.BOTTOM) }) }
                 }
             }
         }
@@ -132,6 +153,18 @@ fun DashboardScreen(viewModel: LogiCloViewModel) {
             initialTemp = uiState.indoorTargetTemp,
             onDismiss = { showTempSheet = false },
             onTempChanged = { viewModel.setIndoorTemp(it) }
+        )
+    }
+
+    // フィードバックダイアログ
+    if (uiState.showFeedbackDialog) {
+        FeedbackDialog(
+            wornItems = viewModel.getLastWornItems(),
+            basisTemp = uiState.feedbackBasisTemp,
+            onSubmit = { itemId, rating, minTemp, maxTemp ->
+                viewModel.submitFeedbackWithCustomTemp(itemId, rating, minTemp, maxTemp)
+            },
+            onDismiss = { viewModel.dismissFeedbackDialog() }
         )
     }
 }
@@ -243,6 +276,7 @@ private fun WeatherInfo(
     apparentTemp: Double?,
     humidity: Int?,
     weatherCode: Int?,
+    isDebugMode: Boolean = false,
     onIndoorClick: () -> Unit
 ) {
     val isIndoor = selectedEnv == EnvMode.INDOOR
@@ -286,6 +320,16 @@ private fun WeatherInfo(
         Row(
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // デバッグモードインジケーター
+            if (isDebugMode) {
+                Icon(
+                    Icons.Default.BugReport,
+                    contentDescription = "Debug Mode",
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(Modifier.width(4.dp))
+            }
             Icon(
                 weatherIcon,
                 contentDescription = null,
@@ -434,8 +478,8 @@ private fun IndoorTempSheet(
                     value = temp,
                     onValueChange = { temp = it },
                     onValueChangeFinished = { onTempChanged(temp) },
-                    valueRange = 18f..28f,
-                    steps = 9,
+                    valueRange = 15f..30f,
+                    steps = 14,
                     modifier = Modifier.weight(1f)
                 )
                 Icon(Icons.Default.WbSunny, contentDescription = "Warmer", tint = Color(0xFFFFA500))
@@ -504,6 +548,370 @@ private fun getWeatherDataForTimeSlot(
         Triple(weather.apparentTemperatureCelsius, weather.humidityPercent, weather.weatherCode)
     } else {
         Triple(null, null, null)
+    }
+}
+
+// --- Feedback Dialog ---
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FeedbackDialog(
+    wornItems: List<UiClothingItem>,
+    basisTemp: Double,
+    onSubmit: (itemId: String, rating: WearFeedbackRating, minTemp: Double, maxTemp: Double) -> Unit,
+    onDismiss: () -> Unit
+) {
+    // 各アイテムの状態を管理
+    data class ItemFeedbackState(
+        val rating: WearFeedbackRating?,
+        val minTemp: Float,
+        val maxTemp: Float,
+        val originalMin: Float,
+        val originalMax: Float
+    )
+
+    val itemStates = remember {
+        mutableStateMapOf<String, ItemFeedbackState>().apply {
+            wornItems.forEach { item ->
+                val min = (item.comfortMinCelsius ?: 10.0).toFloat()
+                val max = (item.comfortMaxCelsius ?: 30.0).toFloat()
+                this[item.id] = ItemFeedbackState(null, min, max, min, max)
+            }
+        }
+    }
+
+    // アイテムタイプのラベル
+    fun getItemLabel(type: ItemType): String = when (type) {
+        ItemType.OUTER -> "アウター"
+        ItemType.TOP -> "トップス"
+        ItemType.BOTTOM -> "ボトムス"
+    }
+
+    // 評価に基づいて推奨温度を計算
+    fun calculateSuggestedTemp(item: UiClothingItem, rating: WearFeedbackRating): Pair<Float, Float> {
+        val currentMin = (item.comfortMinCelsius ?: 10.0).toFloat()
+        val currentMax = (item.comfortMaxCelsius ?: 30.0).toFloat()
+
+        return when (rating) {
+            WearFeedbackRating.TOO_COLD -> {
+                val newMin = maxOf(currentMin + 3f, basisTemp.toFloat() + 1f)
+                Pair(newMin, currentMax)
+            }
+            WearFeedbackRating.TOO_WARM -> {
+                val newMax = minOf(currentMax - 3f, basisTemp.toFloat() - 1f)
+                Pair(currentMin, newMax)
+            }
+            WearFeedbackRating.JUST_RIGHT -> Pair(currentMin, currentMax)
+        }
+    }
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // ヘッダー
+            Text(
+                text = "今日の服装はどうでしたか？",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = 8.dp)
+            )
+
+            Text(
+                text = "体感気温: ${basisTemp.toInt()}℃",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextGrey,
+                modifier = Modifier.padding(horizontal = 8.dp)
+            )
+
+            // 各アイテムの評価カード
+            wornItems.forEach { item ->
+                val state = itemStates[item.id] ?: return@forEach
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        // アイテム名
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                painter = painterResource(id = item.displayIcon),
+                                contentDescription = null,
+                                tint = item.color,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Column {
+                                Text(
+                                    text = getItemLabel(item.type),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = TextGrey
+                                )
+                                Text(
+                                    text = item.name,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        // 3つの評価ボタン
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            // 寒かった
+                            FeedbackRatingButton(
+                                icon = Icons.Default.AcUnit,
+                                label = "寒かった",
+                                isSelected = state.rating == WearFeedbackRating.TOO_COLD,
+                                tint = Color(0xFF2196F3),
+                                modifier = Modifier.weight(1f),
+                                onClick = {
+                                    val (newMin, newMax) = calculateSuggestedTemp(item, WearFeedbackRating.TOO_COLD)
+                                    itemStates[item.id] = state.copy(
+                                        rating = WearFeedbackRating.TOO_COLD,
+                                        minTemp = newMin,
+                                        maxTemp = newMax
+                                    )
+                                }
+                            )
+
+                            // 快適
+                            FeedbackRatingButton(
+                                icon = Icons.Default.ThumbUp,
+                                label = "快適",
+                                isSelected = state.rating == WearFeedbackRating.JUST_RIGHT,
+                                tint = Color(0xFF4CAF50),
+                                modifier = Modifier.weight(1f),
+                                onClick = {
+                                    itemStates[item.id] = state.copy(
+                                        rating = WearFeedbackRating.JUST_RIGHT,
+                                        minTemp = state.originalMin,
+                                        maxTemp = state.originalMax
+                                    )
+                                }
+                            )
+
+                            // 暑かった
+                            FeedbackRatingButton(
+                                icon = Icons.Default.WbSunny,
+                                label = "暑かった",
+                                isSelected = state.rating == WearFeedbackRating.TOO_WARM,
+                                tint = Color(0xFFFF9800),
+                                modifier = Modifier.weight(1f),
+                                onClick = {
+                                    val (newMin, newMax) = calculateSuggestedTemp(item, WearFeedbackRating.TOO_WARM)
+                                    itemStates[item.id] = state.copy(
+                                        rating = WearFeedbackRating.TOO_WARM,
+                                        minTemp = newMin,
+                                        maxTemp = newMax
+                                    )
+                                }
+                            )
+                        }
+
+                        // 温度調整スライダー（快適以外を選択時に表示）
+                        if (state.rating != null && state.rating != WearFeedbackRating.JUST_RIGHT) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(
+                                        MaterialTheme.colorScheme.surfaceVariant,
+                                        RoundedCornerShape(12.dp)
+                                    )
+                                    .padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "適正温度を調整",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "${state.minTemp.toInt()}℃ 〜 ${state.maxTemp.toInt()}℃",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+
+                                // 変更前後の表示
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "${state.originalMin.toInt()}℃〜${state.originalMax.toInt()}℃",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = TextGrey
+                                    )
+                                    Icon(
+                                        Icons.AutoMirrored.Filled.ArrowForward,
+                                        contentDescription = null,
+                                        modifier = Modifier
+                                            .padding(horizontal = 8.dp)
+                                            .size(16.dp),
+                                        tint = TextGrey
+                                    )
+                                    Text(
+                                        text = "${state.minTemp.toInt()}℃〜${state.maxTemp.toInt()}℃",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+
+                                // 下限温度スライダー
+                                if (state.rating == WearFeedbackRating.TOO_COLD) {
+                                    Column {
+                                        Text(
+                                            text = "下限温度: ${state.minTemp.toInt()}℃",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = TextGrey
+                                        )
+                                        Slider(
+                                            value = state.minTemp,
+                                            onValueChange = { newMin ->
+                                                if (newMin < state.maxTemp) {
+                                                    itemStates[item.id] = state.copy(minTemp = newMin)
+                                                }
+                                            },
+                                            valueRange = 0f..40f,
+                                            steps = 39,
+                                            colors = SliderDefaults.colors(
+                                                thumbColor = Color(0xFF2196F3),
+                                                activeTrackColor = Color(0xFF2196F3)
+                                            )
+                                        )
+                                    }
+                                }
+
+                                // 上限温度スライダー
+                                if (state.rating == WearFeedbackRating.TOO_WARM) {
+                                    Column {
+                                        Text(
+                                            text = "上限温度: ${state.maxTemp.toInt()}℃",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = TextGrey
+                                        )
+                                        Slider(
+                                            value = state.maxTemp,
+                                            onValueChange = { newMax ->
+                                                if (newMax > state.minTemp) {
+                                                    itemStates[item.id] = state.copy(maxTemp = newMax)
+                                                }
+                                            },
+                                            valueRange = 0f..40f,
+                                            steps = 39,
+                                            colors = SliderDefaults.colors(
+                                                thumbColor = Color(0xFFFF9800),
+                                                activeTrackColor = Color(0xFFFF9800)
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            // ボタン行
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("後で")
+                }
+
+                Button(
+                    onClick = {
+                        // 評価を送信（カスタム温度範囲付き）
+                        itemStates.forEach { (itemId, state) ->
+                            state.rating?.let { rating ->
+                                onSubmit(
+                                    itemId,
+                                    rating,
+                                    state.minTemp.toDouble(),
+                                    state.maxTemp.toDouble()
+                                )
+                            }
+                        }
+                        onDismiss()
+                    },
+                    modifier = Modifier.weight(1f),
+                    enabled = itemStates.values.any { it.rating != null }
+                ) {
+                    Text("送信")
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+        }
+    }
+}
+
+@Composable
+private fun FeedbackRatingButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    isSelected: Boolean,
+    tint: Color,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val backgroundColor = if (isSelected) tint.copy(alpha = 0.15f) else Color.Transparent
+    val borderColor = if (isSelected) tint else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(backgroundColor)
+            .border(1.dp, borderColor, RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp, horizontal = 8.dp)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = if (isSelected) tint else TextGrey,
+            modifier = Modifier.size(24.dp)
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+            color = if (isSelected) tint else TextGrey
+        )
     }
 }
 

@@ -12,6 +12,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Loop
 import androidx.compose.material.icons.filled.RadioButtonChecked
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material3.*
@@ -179,14 +180,14 @@ fun IconToggleGroup(
 fun OutfitCardItem(
     item: UiClothingItem,
     label: String,
-    onRemove: () -> Unit
+    onChangeItem: () -> Unit
 ) {
     ClothingItemCard(
         item = item,
         label = label,
         trailingContent = {
-            IconButton(onClick = onRemove) {
-                Icon(Icons.Default.Close, contentDescription = "Remove", tint = TextGrey)
+            IconButton(onClick = onChangeItem) {
+                Icon(Icons.Default.Loop, contentDescription = "Change", tint = TextGrey)
             }
         }
     )
@@ -195,12 +196,13 @@ fun OutfitCardItem(
 /**
  * 統一された服カードコンポーネント
  * ホーム画面とクローゼット画面で共通使用
+ * @param showRemainingWears 残り着用回数を表示するか（ホーム・クローゼット画面ではtrue、洗濯画面ではfalse）
  */
 @Composable
 fun ClothingItemCard(
     item: UiClothingItem,
     label: String? = null,
-    showBrand: Boolean = true,
+    showRemainingWears: Boolean = true,
     trailingContent: @Composable (() -> Unit)? = null,
     bottomContent: @Composable (() -> Unit)? = null
 ) {
@@ -247,22 +249,30 @@ fun ClothingItemCard(
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
-                    if (showBrand && item.brand.isNotEmpty()) {
+                    // ブランド名と色をテキストで横並び表示
+                    val detailParts = listOfNotNull(
+                        item.brand.takeIf { it.isNotEmpty() },
+                        item.colorName.takeIf { it.isNotEmpty() }
+                    )
+                    if (detailParts.isNotEmpty()) {
                         Text(
-                            item.brand,
+                            detailParts.joinToString(" / "),
                             style = MaterialTheme.typography.bodySmall,
                             color = TextGrey
                         )
                     }
-                    Spacer(Modifier.height(4.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        if (item.isDirty) {
-                            Tag(text = "洗濯待ち", color = MaterialTheme.colorScheme.error)
-                        } else {
-                            Tag(text = "残り${item.maxWears - item.currentWears}回")
-                        }
-                        if (item.maxWears == 1) {
-                            Tag(text = "毎回洗う", color = MaterialTheme.colorScheme.secondary)
+                    // 残り着用回数（ホーム・クローゼット画面のみ表示）
+                    if (showRemainingWears) {
+                        Spacer(Modifier.height(4.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            if (item.isDirty) {
+                                Tag(text = "洗濯待ち", color = MaterialTheme.colorScheme.error)
+                            } else {
+                                Tag(text = "残り${item.maxWears - item.currentWears}回")
+                            }
+                            if (item.maxWears == 1) {
+                                Tag(text = "毎回洗う", color = MaterialTheme.colorScheme.secondary)
+                            }
                         }
                     }
                 }

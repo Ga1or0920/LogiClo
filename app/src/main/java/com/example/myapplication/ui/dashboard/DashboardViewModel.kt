@@ -265,6 +265,17 @@ class DashboardViewModel(
                     } else {
                         resolveComfortRange(environment, weather, indoorOverride = preferences.indoorTemperatureCelsius)
                     }
+                    // OUTER items always use outdoor temperature (for commute/outdoor travel)
+                    val (outerTempMin, outerTempMax) = if (selectedCasualSummary != null) {
+                        resolveComfortRange(
+                            environment = EnvironmentMode.OUTDOOR,
+                            weather = weather,
+                            minOverride = selectedCasualSummary.minTemperatureCelsius,
+                            maxOverride = selectedCasualSummary.maxTemperatureCelsius
+                        )
+                    } else {
+                        resolveComfortRange(EnvironmentMode.OUTDOOR, weather)
+                    }
                     val suggestionResult = suggestionEngine.buildSuggestions(
                         mode = mode,
                         items = closetItems,
@@ -272,6 +283,8 @@ class DashboardViewModel(
                         allowBlackNavy = preferences.colorRules.allowBlackNavy,
                         temperatureMin = targetMinTemp,
                         temperatureMax = targetMaxTemp,
+                        outerTemperatureMin = outerTempMin,
+                        outerTemperatureMax = outerTempMax,
                         colorWish = activeColorWish
                     )
                     val suggestions = suggestionResult.suggestions
@@ -1039,19 +1052,11 @@ class DashboardViewModel(
         }
     }
 
-    fun onIndoorTemperatureChanged(value: String) {
-        val parsed = value.trim().toDoubleOrNull()
+    fun onIndoorTemperatureChanged(value: Float) {
+        val clamped = value.coerceIn(INDOOR_TEMP_MIN, INDOOR_TEMP_MAX).toDouble()
         viewModelScope.launch {
             userPreferencesRepository.update { current ->
-                current.copy(indoorTemperatureCelsius = parsed)
-            }
-        }
-    }
-
-    fun clearIndoorTemperatureOverride() {
-        viewModelScope.launch {
-            userPreferencesRepository.update { current ->
-                current.copy(indoorTemperatureCelsius = null)
+                current.copy(indoorTemperatureCelsius = clamped)
             }
         }
     }
@@ -1475,8 +1480,11 @@ class DashboardViewModel(
         locationSearchJob?.cancel()
     }
 
-    private companion object {
-        const val INDOOR_HALF_RANGE = 2.5
+    companion object {
+        const val INDOOR_TEMP_MIN = 15f
+        const val INDOOR_TEMP_MAX = 30f
+        const val INDOOR_TEMP_DEFAULT = 22f
+        private const val INDOOR_HALF_RANGE = 2.5
         private const val INACTIVITY_THRESHOLD_DAYS = 7L
         private const val MANUAL_OVERRIDE_INPUT_PATTERN = "yyyy-MM-dd HH:mm"
         private const val MANUAL_OVERRIDE_DATE_ONLY_PATTERN = "yyyy-MM-dd"

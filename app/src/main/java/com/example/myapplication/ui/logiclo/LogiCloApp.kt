@@ -89,7 +89,20 @@ fun LogiCloApp(viewModel: LogiCloViewModel = viewModel()) {
                 composable(Screen.Dashboard.route) { DashboardScreen(viewModel) }
                 composable(Screen.Closet.route) { ClosetScreen(viewModel) }
                 composable(Screen.Laundry.route) { LaundryScreen(viewModel) }
-                composable(Screen.Settings.route) { SettingsScreen(viewModel) }
+                composable(Screen.Settings.route) {
+                    SettingsScreen(
+                        viewModel = viewModel,
+                        onNavigateToDashboard = {
+                            navController.navigate(Screen.Dashboard.route) {
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    saveState = true
+                                }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        }
+                    )
+                }
             }
         }
     }

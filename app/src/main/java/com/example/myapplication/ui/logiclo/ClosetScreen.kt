@@ -368,10 +368,18 @@ private fun AddItemSheet(
         mapOf("key" to "jacket", "icon" to com.example.myapplication.R.drawable.ic_clothing_outer, "label" to "ジャケット"),
         mapOf("key" to "coat", "icon" to com.example.myapplication.R.drawable.ic_clothing_outer, "label" to "コート"),
     )}
-    val colors = remember { listOf(
-        Color.White, Color.Black, Color.Gray, Color(0xFF1A237E),
-        Color.LightGray, Color(0xFFD7CCC8),
-        Color(0xFF558B2F), Color(0xFF795548), Color(0xFFE53935),
+    // 色と名前のペア
+    data class ColorOption(val color: Color, val name: String)
+    val colorOptions = remember { listOf(
+        ColorOption(Color.White, "ホワイト"),
+        ColorOption(Color.Black, "ブラック"),
+        ColorOption(Color.Gray, "グレー"),
+        ColorOption(Color(0xFF1A237E), "ネイビー"),
+        ColorOption(Color.LightGray, "ライトグレー"),
+        ColorOption(Color(0xFFD7CCC8), "ベージュ"),
+        ColorOption(Color(0xFF558B2F), "グリーン"),
+        ColorOption(Color(0xFF795548), "ブラウン"),
+        ColorOption(Color(0xFFE53935), "レッド"),
     )}
 
     var categoryKey by remember { mutableStateOf(itemToEdit?.categoryKey ?: "t_shirt") }
@@ -385,6 +393,8 @@ private fun AddItemSheet(
     var customComfortMin by remember { mutableStateOf(itemToEdit?.comfortMinCelsius) }
     var customComfortMax by remember { mutableStateOf(itemToEdit?.comfortMaxCelsius) }
     var showTempRangeDialog by remember { mutableStateOf(false) }
+    // 初期ステータス: 0=クローゼット, 1=洗濯カゴ, 2=クリーニング店
+    var initialStatusIndex by remember { mutableIntStateOf(0) }
 
     val onCategorySelected = { cat: Map<String, Any> ->
         categoryKey = cat["key"] as String
@@ -414,7 +424,14 @@ private fun AddItemSheet(
             comfortMinCelsius = customComfortMin,
             comfortMaxCelsius = customComfortMax,
         )
-        viewModel.addItem(newItem)
+        // 選択されたステータスに応じて保存
+        val status = when (initialStatusIndex) {
+            0 -> com.example.myapplication.domain.model.LaundryStatus.CLOSET
+            1 -> com.example.myapplication.domain.model.LaundryStatus.DIRTY
+            2 -> com.example.myapplication.domain.model.LaundryStatus.CLEANING
+            else -> com.example.myapplication.domain.model.LaundryStatus.CLOSET
+        }
+        viewModel.addItemWithStatus(newItem, status)
         onDismiss()
     }
 
@@ -436,7 +453,41 @@ private fun AddItemSheet(
             },
             bottomBar = {
                 Surface(shadowElevation = 8.dp) {
-                    Box(modifier = Modifier.padding(24.dp)) {
+                    Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp)) {
+                        // 初期ステータスセレクター（新規登録時のみ表示）
+                        if (!isEditing) {
+                            Text(
+                                "登録先",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = TextGrey,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                                SegmentedButton(
+                                    selected = initialStatusIndex == 0,
+                                    onClick = { initialStatusIndex = 0 },
+                                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 3)
+                                ) {
+                                    Text("クローゼット", fontSize = 12.sp)
+                                }
+                                SegmentedButton(
+                                    selected = initialStatusIndex == 1,
+                                    onClick = { initialStatusIndex = 1 },
+                                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 3)
+                                ) {
+                                    Text("洗濯カゴ", fontSize = 12.sp)
+                                }
+                                SegmentedButton(
+                                    selected = initialStatusIndex == 2,
+                                    onClick = { initialStatusIndex = 2 },
+                                    shape = SegmentedButtonDefaults.itemShape(index = 2, count = 3)
+                                ) {
+                                    Text("クリーニング", fontSize = 12.sp)
+                                }
+                            }
+                            Spacer(Modifier.height(16.dp))
+                        }
                         Button(onClick = { saveItem() }, modifier = Modifier.fillMaxWidth().height(56.dp)) {
                             Text("保存する", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                         }
@@ -519,27 +570,53 @@ private fun AddItemSheet(
 
                 Text("色", style = MaterialTheme.typography.titleSmall, color = TextGrey)
                 Spacer(Modifier.height(12.dp))
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier.fillMaxWidth()
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(56.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.height(160.dp)
                 ) {
-                    colors.forEach { c ->
-                        val isSelected = color.value == c.value
-                        Box(
+                    items(colorOptions) { option ->
+                        val isSelected = color.value == option.color.value
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(c)
-                                .border(
-                                    width = 2.dp,
-                                    color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Gray,
-                                    shape = CircleShape
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { color = option.color }
+                                .background(
+                                    if (isSelected) MaterialTheme.colorScheme.primaryContainer
+                                    else Color.Transparent
                                 )
-                                .clickable { color = c }
+                                .padding(4.dp)
                         ) {
-                            if (isSelected) {
-                                Icon(Icons.Default.Check, contentDescription = "Selected", tint = if(c == Color.Black) Color.White else Color.Black, modifier = Modifier.align(Alignment.Center))
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(option.color)
+                                    .border(
+                                        width = 2.dp,
+                                        color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Gray.copy(alpha = 0.5f),
+                                        shape = CircleShape
+                                    )
+                            ) {
+                                if (isSelected) {
+                                    Icon(
+                                        Icons.Default.Check,
+                                        contentDescription = "Selected",
+                                        tint = if (option.color == Color.Black) Color.White else Color.Black,
+                                        modifier = Modifier.align(Alignment.Center).size(20.dp)
+                                    )
+                                }
                             }
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = option.name,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 10.sp,
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else TextGrey,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                            )
                         }
                     }
                 }

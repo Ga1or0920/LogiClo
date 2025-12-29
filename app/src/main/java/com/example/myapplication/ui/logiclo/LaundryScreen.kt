@@ -168,9 +168,14 @@ private fun LaundryList(
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
-                            if (item.brand.isNotEmpty()) {
+                            // ブランド名と色をテキストで横並び表示
+                            val detailParts = listOfNotNull(
+                                item.brand.takeIf { it.isNotEmpty() },
+                                item.colorName.takeIf { it.isNotEmpty() }
+                            )
+                            if (detailParts.isNotEmpty()) {
                                 Text(
-                                    item.brand,
+                                    detailParts.joinToString(" / "),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = TextGrey
                                 )

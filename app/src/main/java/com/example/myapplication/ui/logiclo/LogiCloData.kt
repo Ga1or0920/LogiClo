@@ -24,6 +24,7 @@ data class UiClothingItem(
     val sleeveLength: SleeveLength = SleeveLength.SHORT,
     val thickness: Thickness = Thickness.NORMAL,
     val color: Color,
+    val colorName: String = "",
     val icon: Int,
     val maxWears: Int,
     var currentWears: Int = 0,

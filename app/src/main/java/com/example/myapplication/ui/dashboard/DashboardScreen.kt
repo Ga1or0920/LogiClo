@@ -57,10 +57,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Slider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -225,7 +227,6 @@ fun DashboardScreen(modifier: Modifier = Modifier) {
             onMapPickerConfirm = viewModel::onMapPickerConfirmed,
             onDismissComebackDialog = viewModel::onComebackDialogDismissed,
             onIndoorTemperatureChanged = viewModel::onIndoorTemperatureChanged,
-            onClearIndoorTemperatureOverride = viewModel::clearIndoorTemperatureOverride,
             isMapSupported = isMapSupported,
             modifier = Modifier
                 .fillMaxSize()
@@ -268,8 +269,7 @@ private fun DashboardContent(
     onMapPickerCoordinateChanged: (Double, Double) -> Unit,
     onMapPickerConfirm: () -> Unit,
     onDismissComebackDialog: () -> Unit,
-    onIndoorTemperatureChanged: (String) -> Unit,
-    onClearIndoorTemperatureOverride: () -> Unit,
+    onIndoorTemperatureChanged: (Float) -> Unit,
     isMapSupported: Boolean,
     modifier: Modifier = Modifier
 ) {
@@ -323,8 +323,7 @@ private fun DashboardContent(
                     isMainMenuVisible = false
                 },
                 onDismiss = { isMainMenuVisible = false },
-                onIndoorTemperatureChanged = onIndoorTemperatureChanged,
-                onClearIndoorTemperatureOverride = onClearIndoorTemperatureOverride
+                onIndoorTemperatureChanged = onIndoorTemperatureChanged
             )
         }
     }
@@ -697,8 +696,7 @@ private fun MainMenuDialog(
     currentEnvironment: EnvironmentMode,
     destination: String,
     indoorTemperature: Double?,
-    onIndoorTemperatureChanged: (String) -> Unit,
-    onClearIndoorTemperatureOverride: () -> Unit,
+    onIndoorTemperatureChanged: (Float) -> Unit,
     onModeSelected: (TpoMode) -> Unit,
     onEnvironmentSelected: (EnvironmentMode) -> Unit,
     onDestinationChanged: (String) -> Unit,
@@ -732,7 +730,6 @@ private fun MainMenuDialog(
                     destination = destination,
                     indoorTemperature = indoorTemperature,
                     onIndoorTemperatureChanged = onIndoorTemperatureChanged,
-                    onClearIndoorTemperatureOverride = onClearIndoorTemperatureOverride,
                     onModeSelected = onModeSelected,
                     onEnvironmentSelected = onEnvironmentSelected,
                     onDestinationChanged = onDestinationChanged,
@@ -759,8 +756,7 @@ private fun MainMenuContent(
         currentEnvironment: EnvironmentMode,
         destination: String,
     indoorTemperature: Double?,
-    onIndoorTemperatureChanged: (String) -> Unit,
-    onClearIndoorTemperatureOverride: () -> Unit,
+    onIndoorTemperatureChanged: (Float) -> Unit,
     onModeSelected: (TpoMode) -> Unit,
         onEnvironmentSelected: (EnvironmentMode) -> Unit,
         onDestinationChanged: (String) -> Unit,
@@ -818,25 +814,42 @@ private fun MainMenuContent(
                     )
                 }
                 if (currentEnvironment == EnvironmentMode.INDOOR) {
-                    Row(
+                    val defaultTemp = DashboardViewModel.INDOOR_TEMP_DEFAULT
+                    val minTemp = DashboardViewModel.INDOOR_TEMP_MIN
+                    val maxTemp = DashboardViewModel.INDOOR_TEMP_MAX
+                    var sliderValue by remember(indoorTemperature) {
+                        mutableFloatStateOf(indoorTemperature?.toFloat() ?: defaultTemp)
+                    }
+                    Column(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        var input by remember { mutableStateOf(indoorTemperature?.let { String.format(Locale.JAPAN, "%.1f", it) } ?: "") }
-                        OutlinedTextField(
-                            value = input,
-                            onValueChange = {
-                                input = it
-                                onIndoorTemperatureChanged(it)
-                            },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f),
-                            placeholder = { Text(text = stringResource(id = R.string.main_menu_indoor_temperature_placeholder)) },
-                            keyboardOptions = KeyboardOptions.Default.copy(keyboardType = KeyboardType.Number)
+                        Text(
+                            text = stringResource(id = R.string.main_menu_indoor_temperature_label, sliderValue.toInt()),
+                            style = MaterialTheme.typography.bodyMedium
                         )
-                        TextButton(onClick = { input = ""; onClearIndoorTemperatureOverride() }) {
-                            Text(text = stringResource(id = R.string.main_menu_indoor_temperature_clear))
+                        Slider(
+                            value = sliderValue,
+                            onValueChange = { sliderValue = it },
+                            onValueChangeFinished = { onIndoorTemperatureChanged(sliderValue) },
+                            valueRange = minTemp..maxTemp,
+                            steps = (maxTemp - minTemp).toInt() - 1,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "${minTemp.toInt()}℃",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "${maxTemp.toInt()}℃",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
                 }
@@ -2095,8 +2108,7 @@ private fun DashboardScreenPreview() {
                 onMapPickerCoordinateChanged = { _, _ -> },
                 onMapPickerConfirm = {},
                 onDismissComebackDialog = {},
-                onIndoorTemperatureChanged = {},
-                onClearIndoorTemperatureOverride = {},
+                onIndoorTemperatureChanged = { _ -> },
                 isMapSupported = true
             )
         }

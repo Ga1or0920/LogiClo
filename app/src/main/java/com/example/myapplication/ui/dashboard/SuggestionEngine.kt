@@ -31,6 +31,8 @@ class SuggestionEngine(
         allowBlackNavy: Boolean,
         temperatureMin: Double,
         temperatureMax: Double,
+        outerTemperatureMin: Double,
+        outerTemperatureMax: Double,
         colorWish: ColorWishPreference?
     ): SuggestionResult {
         val recommendations = mutableListOf<UiMessage>()
@@ -78,8 +80,8 @@ class SuggestionEngine(
         var candidateBottoms = if (bottoms.isNotEmpty()) bottoms else bottomsInCloset
         var outerCandidates = resolveOuterCandidates(
             outers = outersInCloset,
-            temperatureMin = temperatureMin,
-            temperatureMax = temperatureMax
+            temperatureMin = outerTemperatureMin,
+            temperatureMax = outerTemperatureMax
         )
 
         var colorWishApplied = false
@@ -277,18 +279,31 @@ class SuggestionEngine(
         temperatureMax: Double
     ): List<ClothingItem> {
         if (outers.isEmpty()) return emptyList()
+        // Outer items use overlap logic: show if outdoor temperature range overlaps with
+        // the outer's comfort range. This ensures coats are suggested when it's cold outside,
+        // even if the temperature is below the outer's minimum comfort temperature.
         val suitable = outers.filter { outer ->
-            weatherSuitabilityEvaluator.isSuitable(
-                item = outer,
-                minTemperature = temperatureMin,
-                maxTemperature = temperatureMax
-            )
+            isOuterSuitableForTemperature(outer, temperatureMin, temperatureMax)
         }
         val pool = if (suitable.isNotEmpty()) suitable else outers
         return pool.sortedWith(
             compareByDescending<ClothingItem> { formalScoreCalculator.calculate(it) }
                 .thenBy { it.name }
         )
+    }
+
+    private fun isOuterSuitableForTemperature(
+        outer: ClothingItem,
+        temperatureMin: Double,
+        temperatureMax: Double
+    ): Boolean {
+        val (defaultMin, defaultMax) = com.example.myapplication.domain.usecase.ComfortRangeDefaults.forItem(outer)
+        val comfortMin = outer.comfortMinCelsius ?: defaultMin
+        val comfortMax = outer.comfortMaxCelsius ?: defaultMax
+        val tolerance = 3.0
+        // Check if temperature range overlaps with comfort range (with tolerance)
+        // Outer is suitable if: outdoor temp range intersects the outer's comfort range
+        return temperatureMin <= comfortMax + tolerance && temperatureMax >= comfortMin - tolerance
     }
 
     private fun pickOuterCandidate(

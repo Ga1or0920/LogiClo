@@ -6,6 +6,10 @@
     <uses-permission
         android:name="android.permission.POST_NOTIFICATIONS"
         tools:targetApi="tiramisu" />
+    <uses-permission
+        android:name="android.permission.SCHEDULE_EXACT_ALARM"
+        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
 
     <application
         android:name=".LaundryLoopApplication"
@@ -28,6 +32,10 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <receiver
+            android:name=".domain.worker.FeedbackAlarmReceiver"
+            android:exported="false" />
     </application>
 
 </manifest>
