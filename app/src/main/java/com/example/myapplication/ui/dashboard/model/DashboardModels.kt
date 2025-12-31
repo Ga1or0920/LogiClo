@@ -53,7 +53,7 @@ data class DashboardUiState(
     val clockDebug: ClockDebugUiState? = null,
     val wearFeedbackDebug: WearFeedbackDebugUiState? = null,
     val casualForecast: CasualForecastUiState? = null,
-    val comebackDialogMessage: UiMessage? = null,
+    val comebackDialog: ComebackDialogState? = null,
     val colorWish: ColorWishUiState = ColorWishUiState()
 )
 
@@ -177,4 +177,14 @@ data class ClockDebugUiState(
 data class WearFeedbackDebugUiState(
     val messages: List<UiMessage> = emptyList(),
     val lastUpdatedAt: Instant? = null
+)
+
+enum class ComebackDialogType {
+    LAUNDRY_QUESTION,  // 7日以内: 洗濯物を洗ったか？
+    DATA_RESET         // 7日以上: データをリセットするか？
+}
+
+data class ComebackDialogState(
+    val type: ComebackDialogType,
+    val daysSinceLastLogin: Int
 )

@@ -312,18 +312,6 @@ fun SettingsScreen(
 				}
 			}
 
-			clockDebug?.let { clockState ->
-				item {
-					ClockDebugCard(
-						state = clockState,
-						onToggleNextDay = onClockDebugNextDayChanged,
-						onManualInputChanged = onClockDebugManualInputChanged,
-						onApplyManualOverride = onApplyClockDebugManualOverride,
-						onClearManualOverride = onClearClockDebugManualOverride
-					)
-				}
-			}
-
 			   wearFeedbackDebug?.let { feedbackState ->
 				   item {
 					   WearFeedbackDebugCard(state = feedbackState)
@@ -340,6 +328,19 @@ fun SettingsScreen(
 					   Text("着用フィードバック動作確認")
 				   }
 			   }
+
+			// 日時変更項目（着用フィードバック動作確認の下）
+			clockDebug?.let { clockState ->
+				item {
+					ClockDebugCard(
+						state = clockState,
+						onToggleNextDay = onClockDebugNextDayChanged,
+						onManualInputChanged = onClockDebugManualInputChanged,
+						onApplyManualOverride = onApplyClockDebugManualOverride,
+						onClearManualOverride = onClearClockDebugManualOverride
+					)
+				}
+			}
 		}
 	}
 }

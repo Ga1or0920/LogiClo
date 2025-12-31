@@ -129,7 +129,7 @@ class DashboardViewModel(
     private val wearFeedbackDebugState = MutableStateFlow(
         if (clockDebugController.isSupported || weatherDebugController.isSupported) WearFeedbackDebugUiState() else null
     )
-    private val comebackDialogState = MutableStateFlow<UiMessage?>(null)
+    private val comebackDialogState = MutableStateFlow<com.example.myapplication.ui.dashboard.model.ComebackDialogState?>(null)
     private var latestPreferences: UserPreferences = UserPreferences()
     private var latestClosetItems: List<ClothingItem> = emptyList()
     private var locationSearchJob: Job? = null
@@ -209,11 +209,11 @@ class DashboardViewModel(
                 .combine(reviewDialogState) { combined, reviewVisible ->
                     combined to reviewVisible
                 }
-                .combine(comebackDialogState) { (combined, reviewVisible), comebackMessage ->
-                    Triple(combined, reviewVisible, comebackMessage)
+                .combine(comebackDialogState) { (combined, reviewVisible), comebackDialog ->
+                    Triple(combined, reviewVisible, comebackDialog)
                 }
-                .combine(locationEditorState) { (combined, reviewVisible, comebackMessage), locationEditor ->
-                    Triple(combined, reviewVisible, comebackMessage) to locationEditor
+                .combine(locationEditorState) { (combined, reviewVisible, comebackDialog), locationEditor ->
+                    Triple(combined, reviewVisible, comebackDialog) to locationEditor
                 }
                 .combine(locationSearchState) { (combined, locationEditor), locationSearch ->
                     Triple(combined.first, combined.second, combined.third) to Pair(locationEditor, locationSearch)
@@ -226,7 +226,7 @@ class DashboardViewModel(
                 }
                 .combine(mapPickerState) { (combinedBundle, dialogState), mapPicker ->
                     val (combined, editorAndSearch, colorWishPref) = combinedBundle
-                    val (inputsWithDebug, reviewVisible, comebackMessage) = combined
+                    val (inputsWithDebug, reviewVisible, comebackDialog) = combined
                     val (locationEditor, locationSearch) = editorAndSearch
                     val inputs = inputsWithDebug.base
                     val weatherDebug = inputsWithDebug.weatherDebug
@@ -379,7 +379,7 @@ class DashboardViewModel(
                             clockDebug = clockDebug,
                             wearFeedbackDebug = wearFeedback,
                             casualForecast = casualComputation.uiState,
-                            comebackDialogMessage = comebackMessage,
+                            comebackDialog = comebackDialog,
                             colorWish = colorWishUiState,
                             indoorTemperatureCelsius = preferences.indoorTemperatureCelsius,
                             showDeveloperOptions = preferences.showDeveloperOptions
@@ -513,11 +513,16 @@ class DashboardViewModel(
             val lastLogin = preferences.lastLogin
             if (lastLogin != null) {
                 val daysSince = Duration.between(lastLogin, now).toDays()
-                if (daysSince >= INACTIVITY_THRESHOLD_DAYS && comebackDialogState.value == null) {
+                if (daysSince >= 1 && comebackDialogState.value == null) {
                     val clampedDays = daysSince.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-                    comebackDialogState.value = UiMessage(
-                        resId = R.string.dashboard_comeback_dialog_message,
-                        args = listOf(UiMessageArg.Raw(clampedDays))
+                    val dialogType = if (daysSince >= INACTIVITY_THRESHOLD_DAYS) {
+                        com.example.myapplication.ui.dashboard.model.ComebackDialogType.DATA_RESET
+                    } else {
+                        com.example.myapplication.ui.dashboard.model.ComebackDialogType.LAUNDRY_QUESTION
+                    }
+                    comebackDialogState.value = com.example.myapplication.ui.dashboard.model.ComebackDialogState(
+                        type = dialogType,
+                        daysSinceLastLogin = clampedDays
                     )
                 }
             }
@@ -1436,6 +1441,38 @@ class DashboardViewModel(
 
     fun onComebackDialogDismissed() {
         comebackDialogState.value = null
+    }
+
+    fun onLaundryCompleted() {
+        viewModelScope.launch {
+            // Get all dirty items and move them back to closet
+            val allItems = closetRepository.observeAll().first()
+            val dirtyItems = allItems.filter { it.status == LaundryStatus.DIRTY }
+            val updatedItems = dirtyItems.map { item ->
+                item.copy(status = LaundryStatus.CLOSET)
+            }
+            if (updatedItems.isNotEmpty()) {
+                closetRepository.upsert(updatedItems)
+            }
+            comebackDialogState.value = null
+        }
+    }
+
+    fun onResetAllData() {
+        viewModelScope.launch {
+            // Reset all items to closet with 0 wear count
+            val allItems = closetRepository.observeAll().first()
+            val resetItems = allItems.map { item ->
+                item.copy(
+                    status = LaundryStatus.CLOSET,
+                    currentWears = 0
+                )
+            }
+            if (resetItems.isNotEmpty()) {
+                closetRepository.upsert(resetItems)
+            }
+            comebackDialogState.value = null
+        }
     }
 
     fun rerollSuggestion() {

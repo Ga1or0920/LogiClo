@@ -301,9 +301,10 @@ class SuggestionEngine(
         val comfortMin = outer.comfortMinCelsius ?: defaultMin
         val comfortMax = outer.comfortMaxCelsius ?: defaultMax
         val tolerance = 3.0
-        // Check if temperature range overlaps with comfort range (with tolerance)
-        // Outer is suitable if: outdoor temp range intersects the outer's comfort range
-        return temperatureMin <= comfortMax + tolerance && temperatureMax >= comfortMin - tolerance
+        // Show outer if it's cold enough outside to wear it.
+        // Outer is suitable if: outdoor minimum temperature is at or below the outer's maximum comfort temperature.
+        // This ensures that when it's cold outside (even in indoor mode), appropriate outerwear is suggested.
+        return temperatureMin <= comfortMax + tolerance
     }
 
     private fun pickOuterCandidate(

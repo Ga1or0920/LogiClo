@@ -278,6 +278,19 @@
     <string name="dashboard_comeback_dialog_title">おかえりなさい</string>
     <string name="dashboard_comeback_dialog_message">%1$d日ぶりに戻ってきました。最近の予定をチェックしてみませんか？</string>
     <string name="dashboard_comeback_dialog_close">閉じる</string>
+
+    <!-- Laundry question dialog (1-6 days) -->
+    <string name="dashboard_comeback_laundry_title">お帰りなさい</string>
+    <string name="dashboard_comeback_laundry_message">この数日間で、溜まっていた洗濯物は洗いましたか？</string>
+    <string name="dashboard_comeback_laundry_yes">はい、洗いました</string>
+    <string name="dashboard_comeback_laundry_no">いいえ</string>
+
+    <!-- Data reset dialog (7+ days) -->
+    <string name="dashboard_comeback_reset_title">お久しぶりです！</string>
+    <string name="dashboard_comeback_reset_message">データのズレを解消しますか？</string>
+    <string name="dashboard_comeback_reset_confirm">✨ 全て洗濯済みにする</string>
+    <string name="dashboard_comeback_reset_cancel">そのままにする</string>
+
     <string name="wear_message_dirty">%1$s: 洗濯カゴへ</string>
     <string name="wear_message_dirty_with_reason">%1$s: 洗濯カゴへ (%2$s)</string>
     <string name="wear_message_remaining">%1$s: あと%2$d回</string>

@@ -226,6 +226,8 @@ fun DashboardScreen(modifier: Modifier = Modifier) {
             onMapPickerCoordinateChanged = viewModel::onMapPickerLocationChanged,
             onMapPickerConfirm = viewModel::onMapPickerConfirmed,
             onDismissComebackDialog = viewModel::onComebackDialogDismissed,
+            onLaundryCompleted = viewModel::onLaundryCompleted,
+            onResetAllData = viewModel::onResetAllData,
             onIndoorTemperatureChanged = viewModel::onIndoorTemperatureChanged,
             isMapSupported = isMapSupported,
             modifier = Modifier
@@ -269,6 +271,8 @@ private fun DashboardContent(
     onMapPickerCoordinateChanged: (Double, Double) -> Unit,
     onMapPickerConfirm: () -> Unit,
     onDismissComebackDialog: () -> Unit,
+    onLaundryCompleted: () -> Unit,
+    onResetAllData: () -> Unit,
     onIndoorTemperatureChanged: (Float) -> Unit,
     isMapSupported: Boolean,
     modifier: Modifier = Modifier
@@ -356,10 +360,12 @@ private fun DashboardContent(
         )
     }
 
-    state.comebackDialogMessage?.let { message ->
+    state.comebackDialog?.let { dialogState ->
         ComebackDialog(
-            message = message,
-            onDismiss = onDismissComebackDialog
+            dialogState = dialogState,
+            onDismiss = onDismissComebackDialog,
+            onLaundryCompleted = onLaundryCompleted,
+            onResetAllData = onResetAllData
         )
     }
 
@@ -1154,29 +1160,66 @@ private fun InventoryReviewDialog(
 
 @Composable
 private fun ComebackDialog(
-    message: UiMessage,
+    dialogState: com.example.myapplication.ui.dashboard.model.ComebackDialogState,
     onDismiss: () -> Unit,
+    onLaundryCompleted: () -> Unit,
+    onResetAllData: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    androidx.compose.material3.AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(text = stringResource(id = R.string.dashboard_comeback_dialog_close))
-            }
-        },
-        title = {
-            Text(text = stringResource(id = R.string.dashboard_comeback_dialog_title))
-        },
-        text = {
-            Text(
-                text = message.resolve(),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = modifier
+    when (dialogState.type) {
+        com.example.myapplication.ui.dashboard.model.ComebackDialogType.LAUNDRY_QUESTION -> {
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = onDismiss,
+                confirmButton = {
+                    TextButton(onClick = onLaundryCompleted) {
+                        Text(text = stringResource(id = R.string.dashboard_comeback_laundry_yes))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = onDismiss) {
+                        Text(text = stringResource(id = R.string.dashboard_comeback_laundry_no))
+                    }
+                },
+                title = {
+                    Text(text = stringResource(id = R.string.dashboard_comeback_laundry_title))
+                },
+                text = {
+                    Text(
+                        text = stringResource(id = R.string.dashboard_comeback_laundry_message),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = modifier
+                    )
+                }
             )
         }
-    )
+        com.example.myapplication.ui.dashboard.model.ComebackDialogType.DATA_RESET -> {
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = onDismiss,
+                confirmButton = {
+                    TextButton(onClick = onResetAllData) {
+                        Text(text = stringResource(id = R.string.dashboard_comeback_reset_confirm))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = onDismiss) {
+                        Text(text = stringResource(id = R.string.dashboard_comeback_reset_cancel))
+                    }
+                },
+                title = {
+                    Text(text = stringResource(id = R.string.dashboard_comeback_reset_title))
+                },
+                text = {
+                    Text(
+                        text = stringResource(id = R.string.dashboard_comeback_reset_message),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = modifier
+                    )
+                }
+            )
+        }
+    }
 }
 
 @Composable
@@ -2108,6 +2151,8 @@ private fun DashboardScreenPreview() {
                 onMapPickerCoordinateChanged = { _, _ -> },
                 onMapPickerConfirm = {},
                 onDismissComebackDialog = {},
+                onLaundryCompleted = {},
+                onResetAllData = {},
                 onIndoorTemperatureChanged = { _ -> },
                 isMapSupported = true
             )

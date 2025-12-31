@@ -71,10 +71,11 @@ class DefaultAppContainer(
         coordinates = TOKYO_COORDINATES,
         initialSnapshot = seedWeather
     )
+    // Always enable debug controllers for testing comeback dialog and other debug features
     private val weatherDebugControllerImpl: WeatherDebugController =
-        if (isDebugBuild) PersistentWeatherDebugController(context) else NoOpWeatherDebugController
+        PersistentWeatherDebugController(context)
     private val clockDebugControllerImpl: DebugClockController =
-        if (isDebugBuild) DebugClockControllerImpl() else NoOpDebugClockController
+        DebugClockControllerImpl()
     override val locationSearchRepository: LocationSearchRepository =
         // If the YOLP app id is configured via BuildConfig, prefer YOLP-backed search.
         if (com.example.myapplication.BuildConfig.YOLP_APP_ID.isNotBlank()) {

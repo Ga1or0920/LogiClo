@@ -16,7 +16,8 @@ class MainActivity : ComponentActivity() {
             locationSearchRepository = container.locationSearchRepository,
             userPreferencesRepository = container.userPreferencesRepository,
             weatherRepository = container.weatherRepository,
-            wearFeedbackRepository = container.wearFeedbackRepository
+            wearFeedbackRepository = container.wearFeedbackRepository,
+            clockDebugController = container.clockDebugController
         )
     }
 

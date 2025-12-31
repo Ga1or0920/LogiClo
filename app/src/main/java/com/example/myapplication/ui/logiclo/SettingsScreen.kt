@@ -23,6 +23,11 @@ import com.example.myapplication.ui.theme.LogiCloTheme
 import com.example.myapplication.ui.theme.TextGrey
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import android.app.DatePickerDialog
+import java.util.Calendar
+import java.text.SimpleDateFormat
+import java.util.Locale
+import com.example.myapplication.ui.common.formatWeatherTimestamp
 
 // =============================================================================
 // Screen 4: Settings
@@ -98,6 +103,15 @@ fun SettingsScreen(
                         viewModel.triggerFeedbackDialog()
                         onNavigateToDashboard()
                     }
+                )
+            }
+            item {
+                DebugClockOverride(
+                    isNextDayEnabled = uiState.isNextDayDebugEnabled,
+                    manualTimeOverride = uiState.manualTimeOverride,
+                    onNextDayToggle = { viewModel.setDebugNextDayEnabled(it) },
+                    onManualOverrideSet = { viewModel.setDebugManualTimeOverride(it) },
+                    onClearOverride = { viewModel.clearDebugClockOverride() }
                 )
             }
             item {
@@ -385,6 +399,75 @@ private fun DebugFeedbackTrigger(
         }
     )
 }
+
+@Composable
+private fun DebugClockOverride(
+    isNextDayEnabled: Boolean,
+    manualTimeOverride: Long?,
+    onNextDayToggle: (Boolean) -> Unit,
+    onManualOverrideSet: (Long) -> Unit,
+    onClearOverride: () -> Unit
+) {
+    val context = LocalContext.current
+    val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+
+    // 手動入力用のダイアログ表示用
+    fun showDatePicker() {
+        val now = Calendar.getInstance()
+        DatePickerDialog(context, { _, year, month, dayOfMonth ->
+            val cal = Calendar.getInstance()
+            cal.set(year, month, dayOfMonth, 12, 0, 0) // 正午にセット
+            onManualOverrideSet(cal.timeInMillis)
+        }, now.get(Calendar.YEAR), now.get(Calendar.MONTH), now.get(Calendar.DAY_OF_MONTH)).show()
+    }
+
+    Column {
+        // 次の日へトグル
+        ListItem(
+            headlineContent = { Text("日時オーバーライド (次の日)") },
+            supportingContent = {
+                if (isNextDayEnabled) {
+                    Text("アプリ内の日付を+1日進めています", color = MaterialTheme.colorScheme.primary)
+                } else {
+                    Text("日付を1日進めます")
+                }
+            },
+            leadingContent = { Icon(Icons.Default.FastForward, contentDescription = "Next Day") },
+            trailingContent = {
+                Switch(
+                    checked = isNextDayEnabled,
+                    onCheckedChange = onNextDayToggle
+                )
+            }
+        )
+
+        // 手動日時指定
+        val overrideText = manualTimeOverride?.let { 
+             sdf.format(java.util.Date(it))
+        } ?: "未設定"
+
+        ListItem(
+            headlineContent = { Text("日時を手動設定") },
+            supportingContent = {
+                Text(if (manualTimeOverride != null) "現在: $overrideText" else "タップして日時を選択")
+            },
+            leadingContent = { Icon(Icons.Default.DateRange, contentDescription = "Manual Date") },
+            trailingContent = {
+                 Row {
+                     if (manualTimeOverride != null) {
+                         TextButton(onClick = onClearOverride) {
+                             Text("クリア")
+                         }
+                     }
+                     TextButton(onClick = { showDatePicker() }) {
+                         Text("設定")
+                     }
+                 }
+            }
+        )
+    }
+}
+
 
 @Composable
 private fun DebugAlarmSchedulerToggle() {

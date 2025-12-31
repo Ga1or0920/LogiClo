@@ -39,7 +39,8 @@ class LogiCloViewModel(
     private val locationSearchRepository: LocationSearchRepository,
     private val userPreferencesRepository: UserPreferencesRepository,
     private val weatherRepository: WeatherRepository,
-    private val wearFeedbackRepository: com.example.myapplication.data.repository.WearFeedbackRepository? = null
+    private val wearFeedbackRepository: com.example.myapplication.data.repository.WearFeedbackRepository? = null,
+    private val clockDebugController: com.example.myapplication.util.time.DebugClockController? = null
 ) : ViewModel() {
 
     // --- UI State ---
@@ -73,6 +74,19 @@ class LogiCloViewModel(
                 val locationName = override?.label ?: "神戸市 (現在地)"
                 val isCustom = override != null
                 _uiState.update { it.copy(currentLocationName = locationName, isLocationCustom = isCustom) }
+            }
+        }
+        // Observe clock debug state
+        if (clockDebugController != null) {
+            viewModelScope.launch {
+                clockDebugController.nextDayEnabled.collect { enabled ->
+                    _uiState.update { it.copy(isNextDayDebugEnabled = enabled) }
+                }
+            }
+            viewModelScope.launch {
+                clockDebugController.manualOverride.collect { override ->
+                    _uiState.update { it.copy(manualTimeOverride = override?.targetEpochMillis) }
+                }
             }
         }
     }
@@ -117,6 +131,19 @@ class LogiCloViewModel(
 
     fun setLocation(name: String, isCustom: Boolean) {
         _uiState.update { it.copy(currentLocationName = name, isLocationCustom = isCustom) }
+    }
+
+    // --- Clock Debug Actions ---
+    fun setDebugNextDayEnabled(enabled: Boolean) {
+        clockDebugController?.setNextDayEnabled(enabled)
+    }
+
+    fun setDebugManualTimeOverride(epochMillis: Long) {
+        clockDebugController?.setManualOverride(epochMillis)
+    }
+
+    fun clearDebugClockOverride() {
+        clockDebugController?.clear()
     }
 
     // --- Location Search Actions ---
@@ -341,18 +368,12 @@ class LogiCloViewModel(
         val suggestedBottom = if (bottoms.isNotEmpty()) bottoms.random(Random) else null
 
         // アウターの判定:
-        // - 既存の仕様では外気温を基準にしていたが、
-        //   UI の「室内設定」スライダーがあるため、
-        //   ユーザーが室内モードを選択している場合は室内設定温度を優先して判定する。
-        val outdoorTemp = if (state.selectedEnv == EnvMode.INDOOR) {
-            state.indoorTargetTemp.toDouble()
-        } else {
-            getEffectiveTempForTimeSlot(
-                weather = state.weather,
-                isTomorrow = state.isTomorrow,
-                timeId = state.selectedTimeId
-            )
-        }
+        // - 常に外気温を基準にする（室内モードでも移動時などは外気温が重要）
+        val outdoorTemp = getEffectiveTempForTimeSlot(
+            weather = state.weather,
+            isTomorrow = state.isTomorrow,
+            timeId = state.selectedTimeId
+        )
         val needsOuter = outdoorTemp < 20.0
         val suggestedOuter = when {
             state.selectedMode == AppMode.CASUAL && state.selectedTimeId == "spot" && outdoorTemp > 15.0 -> null
@@ -795,7 +816,8 @@ class LogiCloViewModel(
             private val locationSearchRepository: LocationSearchRepository,
             private val userPreferencesRepository: UserPreferencesRepository,
             private val weatherRepository: WeatherRepository,
-            private val wearFeedbackRepository: com.example.myapplication.data.repository.WearFeedbackRepository? = null
+            private val wearFeedbackRepository: com.example.myapplication.data.repository.WearFeedbackRepository? = null,
+            private val clockDebugController: com.example.myapplication.util.time.DebugClockController? = null
         ) : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -805,7 +827,8 @@ class LogiCloViewModel(
                         locationSearchRepository,
                         userPreferencesRepository,
                         weatherRepository,
-                        wearFeedbackRepository
+                        wearFeedbackRepository,
+                        clockDebugController
                     ) as T
                 }
                 throw IllegalArgumentException("Unknown ViewModel class")
@@ -842,6 +865,10 @@ data class LogiCloUiState(
     // Debug Override State
     val debugTemperatureOverride: Double? = null,  // nullの場合は通常の気温を使用
     val debugWeatherCodeOverride: Int? = null,     // nullの場合は通常の天気を使用
+
+    // Clock Debug State
+    val isNextDayDebugEnabled: Boolean = false,
+    val manualTimeOverride: Long? = null,
 
     // Feedback Dialog State
     val showFeedbackDialog: Boolean = false,
