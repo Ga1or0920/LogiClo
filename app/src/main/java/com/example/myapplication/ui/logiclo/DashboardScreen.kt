@@ -29,6 +29,8 @@ import com.example.myapplication.domain.model.WeatherSnapshot
 import com.example.myapplication.ui.logiclo.components.*
 import com.example.myapplication.ui.theme.LogiCloTheme
 import com.example.myapplication.ui.theme.TextGrey
+import com.example.myapplication.ui.dashboard.model.ComebackDialogState
+import com.example.myapplication.ui.dashboard.model.ComebackDialogType
 import com.example.myapplication.domain.model.WearFeedbackRating
 
 // =============================================================================
@@ -45,7 +47,7 @@ fun DashboardScreen(viewModel: LogiCloViewModel) {
     // A simple way to show a snackbar message
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    val wearOutfitMessage by remember { derivedStateOf { viewModel.wearCurrentOutfit() } }
+    // val wearOutfitMessage by remember { derivedStateOf { viewModel.wearCurrentOutfit() } } // Removed derivedStateOf side-effect
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -166,6 +168,88 @@ fun DashboardScreen(viewModel: LogiCloViewModel) {
             },
             onDismiss = { viewModel.dismissFeedbackDialog() }
         )
+    }
+
+    // お帰りなさいダイアログ
+    uiState.comebackDialog?.let { dialogState ->
+        ComebackDialog(
+            state = dialogState,
+            onLaundry = {
+                viewModel.onLaundryCompleted()
+                scope.launch {
+                    val result = snackbarHostState.showSnackbar(
+                        message = "すべての服の着用回数を初期化してクローゼットに戻しました",
+                        actionLabel = "元に戻す",
+                        duration = SnackbarDuration.Long
+                    )
+                    if (result == SnackbarResult.ActionPerformed) {
+                        viewModel.undoResetAllData()
+                        snackbarHostState.showSnackbar("元に戻しました")
+                    }
+                }
+            },
+            onReset = {
+                viewModel.resetAllData()
+                viewModel.onComebackDialogDismissed()
+                scope.launch {
+                    val result = snackbarHostState.showSnackbar(
+                        message = "すべての服の着用回数を初期化してクローゼットに戻しました",
+                        actionLabel = "元に戻す",
+                        duration = SnackbarDuration.Long
+                    )
+                    if (result == SnackbarResult.ActionPerformed) {
+                        viewModel.undoResetAllData()
+                        snackbarHostState.showSnackbar("元に戻しました")
+                    }
+                }
+            },
+            onDismiss = { viewModel.onComebackDialogDismissed() }
+        )
+    }
+}
+
+@Composable
+private fun ComebackDialog(
+    state: ComebackDialogState,
+    onLaundry: () -> Unit,
+    onReset: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    when (state.type) {
+        ComebackDialogType.LAUNDRY_QUESTION -> {
+            AlertDialog(
+                onDismissRequest = onDismiss,
+                title = { Text("お帰りなさい") },
+                text = { Text("この数日間で、溜まっていた洗濯物は洗いましたか？") },
+                confirmButton = {
+                    TextButton(onClick = onLaundry) {
+                        Text("はい、洗いました")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = onDismiss) {
+                        Text("いいえ")
+                    }
+                }
+            )
+        }
+        ComebackDialogType.DATA_RESET -> {
+            AlertDialog(
+                onDismissRequest = onDismiss,
+                title = { Text("お久しぶりです！") },
+                text = { Text("データのズレを解消しますか？") },
+                confirmButton = {
+                    TextButton(onClick = onReset) {
+                        Text("✨ 全て洗濯済みにする")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = onDismiss) {
+                        Text("そのままにする")
+                    }
+                }
+            )
+        }
     }
 }
 

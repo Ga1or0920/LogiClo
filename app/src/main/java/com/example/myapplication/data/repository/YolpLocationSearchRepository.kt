@@ -29,7 +29,10 @@ class YolpLocationSearchRepository(
                 "?appid=$encodedAppId" +
                 "&query=$encodedQuery" +
                 "&output=xml" +
-                "&results=$maxResults"
+                "&results=$maxResults" +
+                "&gc=on" +  // Enable geocoding for better search results
+                "&sort=score" +  // Sort by relevance (score) instead of distance
+                "&detail=full"  // Get full details for better matching
 
             val connection = (URL(url).openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"

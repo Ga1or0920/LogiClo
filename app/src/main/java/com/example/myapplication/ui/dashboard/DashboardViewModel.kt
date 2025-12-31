@@ -456,6 +456,7 @@ class DashboardViewModel(
     private fun observeClockDebug() {
         if (!clockDebugController.isSupported) return
         viewModelScope.launch {
+            var previousNextDayEnabled: Boolean? = null
             clockDebugController.nextDayEnabled.collect { enabled ->
                 clockDebugState.update { current ->
                     current?.let { state ->
@@ -470,6 +471,11 @@ class DashboardViewModel(
                         )
                     }
                 }
+                // Only call trackLastLogin if the value actually changed (not on initial load)
+                if (previousNextDayEnabled != null && previousNextDayEnabled != enabled && enabled) {
+                    trackLastLogin()
+                }
+                previousNextDayEnabled = enabled
             }
         }
         viewModelScope.launch {
@@ -502,6 +508,8 @@ class DashboardViewModel(
                         }
                     }
                 }
+                // Don't call trackLastLogin() on manual override changes
+                // applyClockDebugManualOverride() handles lastLogin reset appropriately
             }
         }
     }
@@ -577,6 +585,25 @@ class DashboardViewModel(
             return
         }
         clockDebugController.setManualOverride(parseResult.epochMillis)
+        // Reset lastLogin to current system time (without offset) so the difference
+        // between now (with offset) and lastLogin becomes the actual absence period
+        viewModelScope.launch {
+            // Get current system time without offset
+            val currentSystemTime = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                Instant.now()
+            } else {
+                null
+            }
+            if (currentSystemTime != null) {
+                userPreferencesRepository.update { current ->
+                    current.copy(lastLogin = currentSystemTime)
+                }
+            }
+            // Reset comeback dialog state to allow new dialog to show after restart
+            comebackDialogState.value = null
+            // Don't call trackLastLogin() here - it would update lastLogin to 'now' (with offset)
+            // which would reset the difference to 0. Instead, the dialog will appear on app restart.
+        }
         val appliedAt = InstantCompat.nowOrNull()
         val label = formatManualOverrideLabel(parseResult.epochMillis)
         clockDebugState.update { state ->
@@ -594,6 +621,16 @@ class DashboardViewModel(
     fun clearClockDebugManualOverride() {
         if (!clockDebugController.isSupported) return
         clockDebugController.clearManualOverride()
+        // Reset lastLogin to current time to prevent dialog from showing
+        viewModelScope.launch {
+            val now = InstantCompat.nowOrNull()
+            if (now != null) {
+                userPreferencesRepository.update { current ->
+                    current.copy(lastLogin = now)
+                }
+            }
+            comebackDialogState.value = null
+        }
         clockDebugState.update { state ->
             state?.copy(
                 isManualOverrideActive = false,

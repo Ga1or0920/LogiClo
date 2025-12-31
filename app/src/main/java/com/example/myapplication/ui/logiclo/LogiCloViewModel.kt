@@ -28,8 +28,14 @@ import kotlinx.coroutines.launch
 import java.util.*
 import kotlin.random.Random
 
+import com.example.myapplication.ui.dashboard.model.ComebackDialogState
+import com.example.myapplication.ui.dashboard.model.ComebackDialogType
+import com.example.myapplication.util.time.InstantCompat
+import java.time.Duration
+
 private const val LOCATION_SEARCH_MIN_QUERY = 2
 private const val LOCATION_SEARCH_DEBOUNCE_MILLIS = 400L
+private const val INACTIVITY_THRESHOLD_DAYS = 7L
 
 // =============================================================================
 // 2. Logic Controller (ViewModel)
@@ -51,6 +57,9 @@ class LogiCloViewModel(
     private val _locationSearchState = MutableStateFlow(LocationSearchState())
     val locationSearchState = _locationSearchState.asStateFlow()
     private var locationSearchJob: Job? = null
+
+    // --- Undo Reset State ---
+    private var beforeResetItems: List<DomainClothingItem>? = null
 
     init {
         viewModelScope.launch {
@@ -79,16 +88,60 @@ class LogiCloViewModel(
         // Observe clock debug state
         if (clockDebugController != null) {
             viewModelScope.launch {
+                var previousNextDayEnabled: Boolean? = null
                 clockDebugController.nextDayEnabled.collect { enabled ->
                     _uiState.update { it.copy(isNextDayDebugEnabled = enabled) }
+                    // Only call trackLastLogin if the value actually changed (not on initial load)
+                    if (previousNextDayEnabled != null && previousNextDayEnabled != enabled && enabled) {
+                        trackLastLogin()
+                    }
+                    previousNextDayEnabled = enabled
                 }
             }
             viewModelScope.launch {
                 clockDebugController.manualOverride.collect { override ->
                     _uiState.update { it.copy(manualTimeOverride = override?.targetEpochMillis) }
+                    // Don't call trackLastLogin() on manual override changes
+                    // setDebugManualTimeOverride() handles lastLogin reset appropriately
                 }
             }
         }
+        
+        trackLastLogin()
+    }
+
+    private fun trackLastLogin() {
+        viewModelScope.launch {
+            val now = InstantCompat.nowOrNull() ?: return@launch
+            val preferences = userPreferencesRepository.observe().first()
+            val lastLogin = preferences.lastLogin
+            if (lastLogin != null) {
+                val daysSince = Duration.between(lastLogin, now).toDays()
+                if (daysSince >= 1 && _uiState.value.comebackDialog == null) {
+                    val clampedDays = daysSince.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+                    val dialogType = if (daysSince >= INACTIVITY_THRESHOLD_DAYS) {
+                        ComebackDialogType.DATA_RESET
+                    } else {
+                        ComebackDialogType.LAUNDRY_QUESTION
+                    }
+                    _uiState.update { it.copy(comebackDialog = ComebackDialogState(dialogType, clampedDays)) }
+                }
+            }
+            userPreferencesRepository.update { current ->
+                current.copy(lastLogin = now)
+            }
+        }
+    }
+
+    fun onComebackDialogDismissed() {
+        _uiState.update { it.copy(comebackDialog = null) }
+    }
+
+    fun onLaundryCompleted() {
+        // Save current state for undo
+        beforeResetItems = _uiState.value.inventory.map { it.toDomainModel() }
+        washAllHomeItems() // Equivalent logic: wash dirty items
+        onComebackDialogDismissed()
     }
 
     // --- Getters ---
@@ -140,10 +193,39 @@ class LogiCloViewModel(
 
     fun setDebugManualTimeOverride(epochMillis: Long) {
         clockDebugController?.setManualOverride(epochMillis)
+        // Reset lastLogin to current system time (without offset) so the difference
+        // between now (with offset) and lastLogin becomes the actual absence period
+        viewModelScope.launch {
+            // Get current system time without offset
+            val currentSystemTime = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                java.time.Instant.now()
+            } else {
+                null
+            }
+            if (currentSystemTime != null) {
+                userPreferencesRepository.update { current ->
+                    current.copy(lastLogin = currentSystemTime)
+                }
+            }
+            // Reset comeback dialog state to allow new dialog to show after restart
+            _uiState.update { it.copy(comebackDialog = null) }
+            // Don't call trackLastLogin() here - it would update lastLogin to 'now' (with offset)
+            // which would reset the difference to 0. Instead, the dialog will appear on app restart.
+        }
     }
 
     fun clearDebugClockOverride() {
         clockDebugController?.clear()
+        // Reset lastLogin to current time to prevent dialog from showing
+        viewModelScope.launch {
+            val now = InstantCompat.nowOrNull()
+            if (now != null) {
+                userPreferencesRepository.update { current ->
+                    current.copy(lastLogin = now)
+                }
+            }
+            _uiState.update { it.copy(comebackDialog = null) }
+        }
     }
 
     // --- Location Search Actions ---
@@ -659,12 +741,24 @@ class LogiCloViewModel(
     }
 
     fun resetAllData() {
-         viewModelScope.launch {
-            val allItems = _uiState.value.inventory.map { 
+        // Save current state for undo
+        beforeResetItems = _uiState.value.inventory.map { it.toDomainModel() }
+        viewModelScope.launch {
+            val allItems = _uiState.value.inventory.map {
                 it.toDomainModel().copy(status = LaundryStatus.CLOSET, currentWears = 0)
             }
             if (allItems.isNotEmpty()) {
                 closetRepository.upsert(allItems)
+            }
+        }
+    }
+
+    fun undoResetAllData() {
+        viewModelScope.launch {
+            val savedItems = beforeResetItems
+            if (savedItems != null) {
+                closetRepository.upsert(savedItems)
+                beforeResetItems = null
             }
         }
     }
@@ -869,6 +963,9 @@ data class LogiCloUiState(
     // Clock Debug State
     val isNextDayDebugEnabled: Boolean = false,
     val manualTimeOverride: Long? = null,
+
+    // Comeback Dialog State
+    val comebackDialog: ComebackDialogState? = null,
 
     // Feedback Dialog State
     val showFeedbackDialog: Boolean = false,

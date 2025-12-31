@@ -41,8 +41,12 @@ fun SettingsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showResetDialog by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
-    Scaffold { paddingValues ->
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) }
+    ) { paddingValues ->
         Column(modifier = Modifier.padding(paddingValues)) {
             // ヘッダー
             Surface(
@@ -110,7 +114,14 @@ fun SettingsScreen(
                     isNextDayEnabled = uiState.isNextDayDebugEnabled,
                     manualTimeOverride = uiState.manualTimeOverride,
                     onNextDayToggle = { viewModel.setDebugNextDayEnabled(it) },
-                    onManualOverrideSet = { viewModel.setDebugManualTimeOverride(it) },
+                    onManualOverrideSet = { epochMillis ->
+                        viewModel.setDebugManualTimeOverride(epochMillis)
+                        scope.launch {
+                            val sdf = SimpleDateFormat("yyyy年MM月dd日", Locale.getDefault())
+                            val dateStr = sdf.format(java.util.Date(epochMillis))
+                            snackbarHostState.showSnackbar("日時を ${dateStr} に設定しました")
+                        }
+                    },
                     onClearOverride = { viewModel.clearDebugClockOverride() }
                 )
             }
