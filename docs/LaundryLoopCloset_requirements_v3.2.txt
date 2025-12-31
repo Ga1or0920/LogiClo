@@ -1,0 +1,258 @@
+LaundryLoop Closet 要件定義書 (v3.2)
+
+1. プロジェクト概要
+
+1.1 プロダクト定義
+
+・ 名称: LaundryLoop Closet
+・ キャッチコピー: 「服を選ぶ」をやめる。「在庫を管理」して生活を回す。
+・ 製品哲学:
+    - ユーザーの課題は「洗濯機が溢れること」ではなく、「明日着ていく服がないこと（在庫切れ）」である。
+    - 既存のファッションアプリのような「おしゃれ」の追求ではなく、衛生管理と在庫管理の自動化による「思考停止」を提供する。
+・ ターゲットユーザー:
+    - 服選びの判断コストを下げたい男性
+    - 家事効率化を求めるミニマリスト
+    - ズボラだが清潔感やTPOは守りたい層
+
+1.2 技術要件 (Non-Functional Requirements)
+
+・ 対応プラットフォーム: Android (主), iOS (副)
+・ 開発フレームワーク: Flutter (Dart)
+・ IDE: Android Studio
+・ バックエンド: Firebase (Authentication, Firestore)
+・ 外部連携: Open-Meteo API (天気・湿度情報の取得)
+・ パフォーマンス: 起動時にデータを一括取得し、オフラインでもフィルタリング操作が可能な設計とする。
+
+2. ユーザー体験 (UX) 要件
+
+2.1 Morning-Only Operation (操作の朝完結)
+
+・ ユーザーは、原則として「朝、服を着替える時」の1回のみアプリを操作する。
+・ 帰宅後の「汚れた報告」などの事後操作をユーザーに強要しない。
+
+2.2 Input Minimization (入力の極小化)
+
+・ ユーザーに対し、気温の数値入力や、「フォーマル度」などの抽象的な値の入力を求めない。
+・ Dynamic Icon Visualization:
+    - 服の写真は必須としない。代わりに「線画の服イラスト（SVG）」を表示し、ユーザーが選んだ色で即座に着色（Tint）して表示する。[Updated]
+    - これにより、写真撮影の手間を排除しつつ、直感的な視認性を提供する。
+・ ユーザーが行うのは「見たままの属性（カテゴリ、色）」の選択のみとする。
+
+2.3 Adaptive Management (柔軟な管理)
+
+・ その日の予定（出社、リモート、休日など）に合わせて、提案モードをトップ画面で瞬時に切り替えられるようにする。
+・ 「基本は洗わないが、これだけは毎回洗いたい」というこだわりを、複雑な設定なしで反映できるようにする。
+
+2.4 Transparency (透明性のある自動化)
+
+・ アプリが裏側で行った判断（例:「暑いから洗濯カゴに入れた」）は、必ずユーザーに通知し、納得感を提供する。
+
+3. 機能要件 (Functional Requirements)
+
+3.1 ユーザー管理機能
+
+・ 匿名認証による即時利用開始機能。
+・ ユーザーごとの設定（暑がり/寒がり補正、色合わせルール）の保存。
+
+3.2 アイテム管理機能 (Closet)
+
+・ 服の登録、編集、削除機能。
+・ カテゴリ選択に基づく洗濯頻度の自動設定（スマートデフォルト）機能。
+・ 「毎回洗う」フラグの手動設定機能。
+・ SVGアイコンの動的着色機能（プリセットカラー選択）。
+・ 画像のあとから追加・編集機能。
+
+3.3 コーデ提案機能 (Dashboard)
+
+・ 天気予報（気温・湿度）に基づく適切なアイテムの抽出。
+・ TPOモード（Casual / Office）に基づくフィルタリング。
+・ 色合わせルールに基づくNGコーデの除外。
+
+3.4 在庫・洗濯管理機能 (Laundry)
+
+・ 着用回数のカウントと、上限到達時のステータス自動変更（クローゼット → 洗濯カゴ）。
+・ 天候条件による着用ダメージの自動加算（汗判定）。
+・ 在庫切れ予兆の検知とアラート通知。
+・ 洗濯カゴ（自宅用）の一括リセット機能。
+・ クリーニング（店用）のステータス管理（出す待ち → 店にある → 受け取り）。
+
+参考リンク: 体感温度計算式が載っているサイト
+https://www.luft.co.jp/cgi/sensible-temperature.php
+
+4. 詳細仕様
+
+4.1 データベース設計 (Firestore Schema)
+
+4.1.1 Collection: users
+
+・ 目的: ユーザー設定を管理する。
+・ フィールド一覧:
+    - lastLogin (Timestamp): 最終ログイン日時。
+    - lastSelectedMode (String): 最後に選択したモード（casual | office）。
+    - preferences (Map): 設定マップ。
+        * tempOffsets (Map): 体感温度補正（例: {"thin": -2, "thick": +2}）。
+        * colorRules (Map): 色合わせルール（例: {"allowBlackNavy": true}）。
+        * defaultMaxWears (Map): カテゴリごとのデフォルト着用回数設定（学習用）。
+
+4.1.2 Collection: items (users サブコレクション)
+
+・ 目的: 服の個体データを管理する。
+・ フィールド一覧:
+    - name (String): 表示名。ユーザー入力。
+    - category (String): 詳細カテゴリ（例: t_shirt, polo, dress_shirt, knit, sweatshirt, denim, slacks, chino, outer_light, coat）。
+    - type (String): 大分類（top, bottom, outer, inner）。
+    - sleeveLength (String): 袖丈（short, long, none）。
+    - thickness (String): 厚さ（thin, normal, thick）。
+    - colorHex (String): 表示用カラー。SVG 着色用カラーコード（例: #000080）[New]。
+    - colorGroup (String): ロジック用色系統。colorHex から自動判定（例: navy_blue）[Updated]。
+    - pattern (String): 柄（solid, stripe, graphic）。
+    - maxWears (Number): 洗濯上限回数。スマートデフォルト値またはユーザー指定値（2〜30）。
+    - currentWears (Number): 現在の着用数。初期値 0。
+    - isAlwaysWash (Boolean): 毎回洗うフラグ。true の場合は maxWears を無視。
+    - cleaningType (String): 洗濯タイプ（home, dry）。
+    - status (String): 現在の状態（closet, dirty, cleaning）。
+    - imageUrl (String): 画像 URL。任意（登録時は null 可、後から更新可能）。
+    - lastWornDate (Timestamp): 最終着用日。ソート用。
+
+4.2 コア・アルゴリズム詳細
+
+4.2.1 フォーマル度算出 (F-Score)
+
+・ 目的: アイテム属性から 0 点（部屋着）〜 10 点（正装）を算出する。
+・ Category 基準点:
+    - sweatshirt, t_shirt, denim = 3 点。
+    - knit, polo, chino = 5 点。
+    - dress_shirt, slacks, jacket = 8 点。
+・ 補正値:
+    - pattern == solid: +1。
+    - pattern == graphic: -2。
+    - colorGroup == monotone または navy_blue: +1。
+    - colorGroup == vivid: -1。
+
+4.2.2 コーデ提案・フィルタリングフロー
+
+1. Status Filter: status == "closet" のアイテムを取得。
+2. Weather Filter:
+    - アイテムの適正気温レンジ（厚さと袖丈のマトリクス定義）が当日の T_min 〜 T_max をカバーするか判定。
+    - Layered Logic: Outer がある場合、下限気温判定には Outer の性能を使用し、上限気温判定には Top の性能を使用する。
+3. TPO Filter:
+    - Casual Mode: Top + Bottom の F-Score 合計が 0 〜 6。
+    - Office Mode: Top + Bottom の F-Score 合計が 7 〜 14。
+4. Color Filter: colorRules に従い NG 組み合わせ（例: vivid × vivid）を除外。
+
+4.2.3 着用ダメージ自動計算 (Auto Wear Damage)
+
+・ トリガー: 朝の「着る」アクション時に実行。
+・ 入力: 最高気温 (T_max), 湿度 (H), アイテムデータ。
+・ 出力: damage (int), reason (String)。
+・ ロジック:
+    1. isAlwaysWash == true の場合:
+        Result: damage = 999（強制 dirty）, reason = "設定により洗濯カゴへ"。
+    2. isAlwaysWash == false の場合:
+        Default: damage = 1, reason = ""。
+        Weather Penalty:
+            条件: (T_max >= 26.0 または H >= 70%) かつ (category が inner, t_shirt 以外)。
+            Result: damage = 2, reason = "☀️ 汗ばむ陽気のため +2カウント"。
+
+4.2.4 在庫アラート (Inventory Forecast)
+
+・ 計算: 現在のモードで成立可能な有効コーデ数 N を算出。
+・ しきい値:
+    - N == 0: Error Alert「緊急警告：明日着る服がありません」。
+    - N <= 2: Warning Alert「洗濯推奨：在庫が切れそうです」。
+
+4.3 画面仕様・UI 設計
+
+4.3.1 Dashboard (ホーム)
+
+・ Mode Switcher: 画面上部に配置。"🏠 Casual" / "🏢 Office" トグル。
+    - 切り替え時に lastSelectedMode を更新し、提案ロジックを再実行。
+・ Action Button: 「これを着る (Wear this)」。
+    - タップ時処理:
+        1. アルゴリズム 4.2.3 を実行し、currentWears を加算。
+        2. currentWears >= maxWears となったアイテムを status: dirty に更新。
+        3. Toast: アイテムごとの結果を表示（例: 「シャツ: 洗濯カゴへ(☀️気温のため), デニム: あと8回」）。
+        4. アルゴリズム 4.2.4 を実行し、必要ならアラートバナーを表示。
+
+4.3.2 Closet (アイテム管理)
+
+・ Add / Edit Item UI:
+    - Category Select: タップでカテゴリ選択。対応する SVG アイコンを表示。
+    - Color Select:
+        * プリセットカラーグリッド（白, 黒, 紺, ベージュ, 赤, 青など約12色）。
+        * 選択した色 (colorHex) で SVG アイコンに動的着色 (Tint) を適用。
+        * 同時に colorGroup（ロジック用）を自動判定。
+        * 写真アップロード UI は下部に小さく配置（任意）。
+    - Smart Default Logic: カテゴリ選択時の自動セット。
+        * t_shirt, inner, dress_shirt → isAlwaysWash = true。
+        * denim → isAlwaysWash = false, maxWears = 10。
+        * knit → isAlwaysWash = false, maxWears = 5。
+    - Always Wash Switch: ユーザーが手動で ON/OFF 可能。
+        * ON 時: 下部のスライダーを無効化。
+        * OFF 時: 下部のスライダー (2〜30 回) を有効化。
+
+4.3.3 Laundry (洗濯管理)
+
+・ Tabs: Home Laundry / Dry Cleaning。
+・ Home Laundry:
+    - 表示対象: status == "dirty" かつ cleaningType == "home"。
+    - Button: 「洗濯完了 (Wash All)」→ 全対象を status: closet, currentWears: 0 に更新。
+・ Dry Cleaning:
+    - 表示対象: cleaningType == "dry" の dirty または cleaning アイテム。
+    - Button A: 「店に出す」→ status: cleaning。
+    - Button B: 「受け取る」→ status: closet, currentWears: 0。
+
+5. ペルソナ別ユーザー体験 (UX) フロー
+
+5.1 ペルソナA: 佐藤 健（28 歳・SE）
+
+・ 特徴: 論理的思考の持ち主で判断コストを最小化したい。夏場の汗判定も自動化したい。
+・ シナリオ 1: ロジックへの共感と「朝完結」の運用。
+    - Phase 0: 登録。
+        * 鹿の子ポロシャツを登録。カテゴリで Polo Shirt を選択し、プリセットのネイビーで SVG を即着色。
+        * スマートデフォルトで maxWears = 1（毎回洗う）に設定されるが、ユーザーがスイッチを OFF にしスライダーを 2 回に設定。
+    - Phase 1: 猛暑の朝。
+        * 最高気温 33℃。Dashboard の Office モード提案を採用し「これを着る」をタップ。
+        * Algorithm 4.2.3 が発動し気温ペナルティで damage = 2。結果として即 status: dirty。
+    - Phase 2: フィードバック。
+        * Toast に「☀️ 猛暑日判定 (+2 カウント) → ポロシャツは洗濯カゴへ移動しました」と表示され納得感を提供。
+    - Phase 3: 週末。
+        * 在庫アラートで「Office モードの在庫が切れそうです」と警告し、週末洗濯を促す。
+
+5.2 ペルソナB: 鈴木 愛（30 歳・広報）
+
+・ 特徴: 出社とリモートが半々。大切な服は毎回洗いたいがデニムはなるべく洗いたくない。
+・ シナリオ: こだわり設定とモードスイッチ。
+    - Phase 0: 登録。
+        * 白い夏用ブラウスはデフォルトで Always Wash が ON。ワイドデニムはスイッチ OFF・maxWears = 10 で保存。
+    - Phase 1: 火曜日（客先訪問）。
+        * モードを Office に切り替えブラウス + スラックス提案を採用。
+        * Always Wash 設定によりブラウスは即 dirty。Toast は「設定により洗濯カゴへ」。
+    - Phase 2: 水曜日（リモート）。
+        * モードを Casual に戻しボーダー T シャツ + ワイドデニムを選択。
+        * Toast は「T シャツは洗濯カゴへ、デニムはあと9回」。
+    - Phase 3: クリーニング管理。
+        * Laundry の Dry Cleaning タブでコートを「店に出す」→ status: cleaning に変更し、提案対象から除外。
+
+5.3 ペルソナC: 翔太（21 歳・大学生）
+
+・ 特徴: 服はあるがコーデが苦手。面倒くさがりで写真登録を避けたい。派手な色合わせを避けたい。
+・ シナリオ: 色合わせの補助と在庫アラート。
+    - Phase 0: 登録。
+        * 写真不要に感動し、カテゴリ T-Shirt と色グリッド（赤）で爆速登録。
+    - Phase 1: 運用。
+        * Algorithm 4.2.2 と colorRules により Vivid × Vivid が除外され、赤 T シャツ + ベージュチノを提案。
+    - Phase 2: 限界の朝。
+        * 長期間洗濯せず、提案実行時に「緊急警告：明日着ていく服がありません（パターン数: 0）」が表示される。
+        * 残っている服が季節・色条件を満たさず、洗濯の必要性を認識。
+
+6. やることメモ
+
+- 服のカテゴリ・色・柄を基にフォーマル度を判定する初期ロジックを整備する（カテゴリ選択肢: スウェット、カジュアルシャツ、ビジネスシャツなど）。
+- 普段着とオフィスカジュアルでコーデ提案の方向性を分ける（普段着はカジュアル〜バランス、オフィスカジュアルはバランス〜フォーマル）。
+- 普段着／オフィスカジュアルの提案パターンが残り 2 通りになったタイミングで通知し、洗濯を促すフローを実装する。
+- 線画の服イラスト（SVG）と着色関数の準備を行う。
+- 服洗濯までの着用回数デフォルト値を定義する。
+- ~~それぞれの服の重量~~
+- ~~一人暮らしでないなら洗濯槽アラート機能を無効化する~~
+- ~~洗濯槽の容量には本アプリで管理する服以外のもの（タオルなど）あるので注意が必要~~
