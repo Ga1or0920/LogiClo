@@ -30,6 +30,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.myapplication.ui.logiclo.UiClothingItem
 import com.example.myapplication.ui.theme.TextGrey
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
 
 @Composable
 fun SlidingToggle(
@@ -180,11 +182,13 @@ fun IconToggleGroup(
 fun OutfitCardItem(
     item: UiClothingItem,
     label: String,
+    tempDiff: Double? = null,
     onChangeItem: () -> Unit
 ) {
     ClothingItemCard(
         item = item,
         label = label,
+        tempDiff = tempDiff,
         trailingContent = {
             IconButton(onClick = onChangeItem) {
                 Icon(Icons.Default.Loop, contentDescription = "Change", tint = TextGrey)
@@ -202,6 +206,7 @@ fun OutfitCardItem(
 fun ClothingItemCard(
     item: UiClothingItem,
     label: String? = null,
+    tempDiff: Double? = null,
     showRemainingWears: Boolean = true,
     trailingContent: @Composable (() -> Unit)? = null,
     bottomContent: @Composable (() -> Unit)? = null
@@ -219,7 +224,7 @@ fun ClothingItemCard(
                 modifier = Modifier.padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // アイコンコンテナ
+                // アイコンまたは画像コンテナ
                 Box(
                     modifier = Modifier
                         .size(56.dp)
@@ -227,12 +232,25 @@ fun ClothingItemCard(
                         .background(MaterialTheme.colorScheme.surfaceVariant),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        painter = painterResource(id = item.displayIcon),
-                        contentDescription = item.name,
-                        tint = item.color,
-                        modifier = Modifier.size(40.dp)
-                    )
+                    if (item.imageUrl != null) {
+                        // 画像がある場合は画像を表示
+                        AsyncImage(
+                            model = item.imageUrl,
+                            contentDescription = item.name,
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(RoundedCornerShape(12.dp)),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        // 画像がない場合はSVGアイコンを表示
+                        Icon(
+                            painter = painterResource(id = item.displayIcon),
+                            contentDescription = item.name,
+                            tint = item.color,
+                            modifier = Modifier.size(40.dp)
+                        )
+                    }
                 }
                 Spacer(Modifier.width(16.dp))
                 Column(modifier = Modifier.weight(1f)) {
@@ -272,6 +290,18 @@ fun ClothingItemCard(
                             }
                             if (item.maxWears == 1) {
                                 Tag(text = "毎回洗う", color = MaterialTheme.colorScheme.secondary)
+                            }
+                            // Temperature difference indicator
+                            if (tempDiff != null) {
+                                val (icon, text, color) = when {
+                                    tempDiff > 10 -> Triple("🔥🔥", "暑すぎ ${tempDiff.toInt()}℃", MaterialTheme.colorScheme.error)
+                                    tempDiff > 5 -> Triple("🔥", "暑い ${tempDiff.toInt()}℃", Color(0xFFFF6B00))
+                                    tempDiff > 0 -> Triple("🌡️", "やや暑 ${tempDiff.toInt()}℃", Color(0xFFFF9500))
+                                    tempDiff < -10 -> Triple("❄️❄️", "寒すぎ ${(-tempDiff).toInt()}℃", Color(0xFF2196F3))
+                                    tempDiff < -5 -> Triple("❄️", "寒い ${(-tempDiff).toInt()}℃", Color(0xFF42A5F5))
+                                    else -> Triple("❄", "やや寒 ${(-tempDiff).toInt()}℃", Color(0xFF64B5F6))
+                                }
+                                Tag(text = "$icon $text", color = color)
                             }
                         }
                     }

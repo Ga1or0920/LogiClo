@@ -19,7 +19,7 @@ import com.example.myapplication.data.local.entity.WearFeedbackEntity
         UserPreferencesEntity::class,
         WearFeedbackEntity::class
     ],
-    version = 10,
+    version = 11,
     exportSchema = false
 )
 abstract class LaundryLoopDatabase : RoomDatabase() {
@@ -111,6 +111,13 @@ abstract class LaundryLoopDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_10_11: Migration = object : Migration(10, 11) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                // 雰囲気フィールドを追加
+                addColumnIfNotExists(database, "clothing_items", "formality", "TEXT")
+            }
+        }
+
         private fun addColumnIfNotExists(
             database: SupportSQLiteDatabase,
             tableName: String,
@@ -155,7 +162,8 @@ abstract class LaundryLoopDatabase : RoomDatabase() {
                     MIGRATION_6_7,
                     MIGRATION_7_8,
                     MIGRATION_8_9,
-                    MIGRATION_9_10
+                    MIGRATION_9_10,
+                    MIGRATION_10_11
             ).build()
         }
     }

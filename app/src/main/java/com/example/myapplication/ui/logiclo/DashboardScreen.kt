@@ -4,6 +4,8 @@ import kotlinx.coroutines.launch
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.layout.*
@@ -43,6 +45,7 @@ fun DashboardScreen(viewModel: LogiCloViewModel) {
     val uiState by viewModel.uiState.collectAsState()
     val locationSearchState by viewModel.locationSearchState.collectAsState()
     var showTempSheet by remember { mutableStateOf(false) }
+    var showOutfitReasonDialog by remember { mutableStateOf(false) }
 
     // A simple way to show a snackbar message
     val snackbarHostState = remember { SnackbarHostState() }
@@ -86,6 +89,41 @@ fun DashboardScreen(viewModel: LogiCloViewModel) {
                 .padding(paddingValues),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            // 天気データ取得エラーの表示
+            val weatherError = uiState.weatherError
+            if (weatherError != null) {
+                item {
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Warning,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Text(
+                                weatherError,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                        }
+                    }
+                }
+            }
+
             item {
                 // 今日/明日・時間帯に応じた天気データを取得
                 val weatherData = getWeatherDataForTimeSlot(
@@ -108,7 +146,8 @@ fun DashboardScreen(viewModel: LogiCloViewModel) {
                     humidity = weatherData.second,
                     weatherCode = effectiveWeatherCode,
                     isDebugMode = isDebugMode,
-                    onIndoorClick = { showTempSheet = true }
+                    onIndoorClick = { showTempSheet = true },
+                    onInfoClick = { showOutfitReasonDialog = true }
                 )
             }
 
@@ -128,13 +167,13 @@ fun DashboardScreen(viewModel: LogiCloViewModel) {
                 }
             } else {
                 uiState.suggestedOuter?.let {
-                    item { OutfitCardItem(item = it, label = "アウター", onChangeItem = { viewModel.changeOutfitItem(ItemType.OUTER) }) }
+                    item { OutfitCardItem(item = it, label = "アウター", tempDiff = uiState.suggestedOuterTempDiff, onChangeItem = { viewModel.changeOutfitItem(ItemType.OUTER) }) }
                 }
                 uiState.suggestedTop?.let {
-                    item { OutfitCardItem(item = it, label = "トップス", onChangeItem = { viewModel.changeOutfitItem(ItemType.TOP) }) }
+                    item { OutfitCardItem(item = it, label = "トップス", tempDiff = uiState.suggestedTopTempDiff, onChangeItem = { viewModel.changeOutfitItem(ItemType.TOP) }) }
                 }
                 uiState.suggestedBottom?.let {
-                    item { OutfitCardItem(item = it, label = "ボトムス", onChangeItem = { viewModel.changeOutfitItem(ItemType.BOTTOM) }) }
+                    item { OutfitCardItem(item = it, label = "ボトムス", tempDiff = uiState.suggestedBottomTempDiff, onChangeItem = { viewModel.changeOutfitItem(ItemType.BOTTOM) }) }
                 }
             }
         }
@@ -155,6 +194,24 @@ fun DashboardScreen(viewModel: LogiCloViewModel) {
             initialTemp = uiState.indoorTargetTemp,
             onDismiss = { showTempSheet = false },
             onTempChanged = { viewModel.setIndoorTemp(it) }
+        )
+    }
+
+    // コーデ選定理由ダイアログ
+    if (showOutfitReasonDialog) {
+        val weatherData = getWeatherDataForTimeSlot(
+            weather = uiState.weather,
+            isTomorrow = uiState.isTomorrow,
+            timeId = uiState.selectedTimeId
+        )
+        val effectiveTemp = uiState.debugTemperatureOverride ?: weatherData.first
+
+        OutfitReasonDialog(
+            apparentTemp = effectiveTemp,
+            outerItem = uiState.suggestedOuter,
+            topItem = uiState.suggestedTop,
+            bottomItem = uiState.suggestedBottom,
+            onDismiss = { showOutfitReasonDialog = false }
         )
     }
 
@@ -361,7 +418,8 @@ private fun WeatherInfo(
     humidity: Int?,
     weatherCode: Int?,
     isDebugMode: Boolean = false,
-    onIndoorClick: () -> Unit
+    onIndoorClick: () -> Unit,
+    onInfoClick: () -> Unit = {}
 ) {
     val isIndoor = selectedEnv == EnvMode.INDOOR
     val displayTemp = if (isIndoor) {
@@ -429,6 +487,19 @@ private fun WeatherInfo(
             if (isIndoor) {
                 Spacer(Modifier.width(4.dp))
                 Icon(Icons.Default.Edit, contentDescription = "Edit", tint = TextGrey, modifier = Modifier.size(14.dp))
+            }
+            // インフォメーションアイコン
+            Spacer(Modifier.width(8.dp))
+            IconButton(
+                onClick = onInfoClick,
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    Icons.Default.Info,
+                    contentDescription = "コーデ選定理由",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
             }
         }
     }
@@ -692,6 +763,7 @@ private fun FeedbackDialog(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -997,6 +1069,301 @@ private fun FeedbackRatingButton(
             color = if (isSelected) tint else TextGrey
         )
     }
+}
+
+// --- Outfit Reason Dialog ---
+@Composable
+private fun OutfitReasonDialog(
+    apparentTemp: Double?,
+    outerItem: UiClothingItem?,
+    topItem: UiClothingItem?,
+    bottomItem: UiClothingItem?,
+    onDismiss: () -> Unit
+) {
+    // アイテムタイプのラベル
+    fun getItemLabel(type: ItemType): String = when (type) {
+        ItemType.OUTER -> "アウター"
+        ItemType.TOP -> "トップス"
+        ItemType.BOTTOM -> "ボトムス"
+    }
+
+    // 適正温度範囲を計算（保存値がない場合のフォールバック）
+    fun calculateComfortRange(
+        type: ItemType,
+        thickness: Thickness,
+        sleeveLength: SleeveLength
+    ): Pair<Double, Double> {
+        val base = when (type) {
+            ItemType.TOP, ItemType.OUTER -> when (thickness) {
+                Thickness.THIN -> 18.0 to 33.0
+                Thickness.NORMAL -> 12.0 to 28.0
+                Thickness.THICK -> 5.0 to 20.0
+            }
+            ItemType.BOTTOM -> when (thickness) {
+                Thickness.THIN -> 20.0 to 34.0
+                Thickness.NORMAL -> 12.0 to 30.0
+                Thickness.THICK -> 5.0 to 20.0
+            }
+        }
+
+        val sleeveAdjust = when (sleeveLength) {
+            SleeveLength.SHORT -> 2.0 to 2.0
+            SleeveLength.NONE -> 0.0 to 3.0
+            SleeveLength.LONG -> -2.0 to -1.0
+        }
+
+        return if (type == ItemType.BOTTOM) {
+            base
+        } else {
+            (base.first + sleeveAdjust.first).coerceAtLeast(-5.0) to
+                    (base.second + sleeveAdjust.second).coerceAtMost(40.0)
+        }
+    }
+
+    // アイテムの適正温度を取得（保存値がなければ計算）
+    fun getComfortRange(item: UiClothingItem): Pair<Double, Double> {
+        return if (item.comfortMinCelsius != null && item.comfortMaxCelsius != null) {
+            item.comfortMinCelsius to item.comfortMaxCelsius
+        } else {
+            calculateComfortRange(item.type, item.thickness, item.sleeveLength)
+        }
+    }
+
+    // アイテムから雰囲気ラベルを取得（保存値優先、なければカテゴリから推測）
+    fun getFormalityLabel(item: UiClothingItem): String {
+        return if (item.formality != null) {
+            when (item.formality) {
+                Formality.FORMAL -> "フォーマル"
+                Formality.SEMI_FORMAL -> "ややフォーマル"
+                Formality.SOMEWHAT_CASUAL -> "ややカジュアル"
+                Formality.CASUAL -> "カジュアル"
+                Formality.STANDARD -> "標準"
+            }
+        } else {
+            // カテゴリから推測
+            when (item.categoryKey) {
+                // フォーマル
+                "shirt", "dress_shirt", "jacket", "blazer", "coat", "suit_jacket",
+                "slacks", "dress_pants" -> "フォーマル"
+                // ややフォーマル
+                "polo", "sweater", "cardigan", "chino" -> "ややフォーマル"
+                // ややカジュアル
+                "knit", "sweatshirt" -> "ややカジュアル"
+                // カジュアル
+                "t_shirt", "tank_top", "hoodie",
+                "denim", "jeans", "shorts" -> "カジュアル"
+                // その他
+                else -> "標準"
+            }
+        }
+    }
+
+    // アイテムからフォーマル度のスコアを取得（保存値優先、なければカテゴリから推測）
+    fun getFormalityScore(item: UiClothingItem): Int {
+        return if (item.formality != null) {
+            when (item.formality) {
+                Formality.FORMAL -> 4
+                Formality.SEMI_FORMAL -> 3
+                Formality.SOMEWHAT_CASUAL -> 2
+                Formality.CASUAL -> 1
+                Formality.STANDARD -> 0
+            }
+        } else {
+            // カテゴリから推測
+            when (item.categoryKey) {
+                // フォーマル
+                "shirt", "dress_shirt", "jacket", "blazer", "coat", "suit_jacket",
+                "slacks", "dress_pants" -> 4
+                // ややフォーマル
+                "polo", "sweater", "cardigan", "chino" -> 3
+                // ややカジュアル
+                "knit", "sweatshirt" -> 2
+                // カジュアル
+                "t_shirt", "tank_top", "hoodie",
+                "denim", "jeans", "shorts" -> 1
+                // その他
+                else -> 0
+            }
+        }
+    }
+
+    // コーディネート全体の雰囲気を計算
+    val allItems = listOfNotNull(outerItem, topItem, bottomItem)
+    val averageFormality = if (allItems.isNotEmpty()) {
+        allItems.map { getFormalityScore(it) }.average()
+    } else {
+        0.0
+    }
+
+    val overallFormality = when {
+        averageFormality >= 3.5 -> "フォーマル"
+        averageFormality >= 2.5 -> "ややフォーマル"
+        averageFormality >= 1.5 -> "ややカジュアル"
+        averageFormality >= 1.0 -> "カジュアル"
+        else -> "標準"
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Text("コーデ選定理由", fontWeight = FontWeight.Bold)
+                apparentTemp?.let {
+                    Text(
+                        "体感温度: ${it.toInt()}℃",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextGrey,
+                        fontWeight = FontWeight.Normal
+                    )
+                }
+            }
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // 全体の説明
+                Text(
+                    "この気温に適した服を選びました",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+
+                // 全体の雰囲気
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.LocalOffer,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        Text(
+                            text = "全体の雰囲気: ",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        Text(
+                            text = overallFormality,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
+
+                HorizontalDivider()
+
+                // 各アイテムの詳細
+                listOfNotNull(outerItem, topItem, bottomItem).forEach { item ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant
+                        ),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            // アイテム名
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    painter = painterResource(id = item.displayIcon),
+                                    contentDescription = null,
+                                    tint = item.color,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Column {
+                                    Text(
+                                        text = getItemLabel(item.type),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = TextGrey
+                                    )
+                                    Text(
+                                        text = item.name,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+
+                            // 適正温度範囲
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.Thermostat,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = TextGrey
+                                )
+                                Text(
+                                    text = "適正温度: ",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = TextGrey
+                                )
+                                val comfortRange = getComfortRange(item)
+                                Text(
+                                    text = "${comfortRange.first.toInt()}℃ 〜 ${comfortRange.second.toInt()}℃",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+
+                            // 雰囲気
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.LocalOffer,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = TextGrey
+                                )
+                                Text(
+                                    text = "雰囲気: ",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = TextGrey
+                                )
+                                Text(
+                                    text = getFormalityLabel(item),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.secondary
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("閉じる")
+            }
+        }
+    )
 }
 
 // --- Preview ---

@@ -117,6 +117,20 @@ enum class CleaningType(val backendValue: String) {
     }
 }
 
+enum class Formality(val backendValue: String) {
+    FORMAL("formal"),
+    SEMI_FORMAL("semi_formal"),
+    SOMEWHAT_CASUAL("somewhat_casual"),
+    CASUAL("casual"),
+    STANDARD("standard"),
+    UNKNOWN("unknown");
+
+    companion object {
+        fun fromBackend(value: String): Formality = entries.firstOrNull { it.backendValue == value }
+            ?: UNKNOWN
+    }
+}
+
 data class ClothingItem(
     val id: String,
     val name: String,
@@ -136,5 +150,6 @@ data class ClothingItem(
     val status: LaundryStatus,
     val brand: String? = null,
     val imageUrl: String? = null,
-    val lastWornDate: Instant? = null
+    val lastWornDate: Instant? = null,
+    val formality: Formality? = null
 )

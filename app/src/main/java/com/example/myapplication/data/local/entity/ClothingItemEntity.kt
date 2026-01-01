@@ -7,6 +7,7 @@ import com.example.myapplication.domain.model.ClothingCategory
 import com.example.myapplication.domain.model.ClothingItem
 import com.example.myapplication.domain.model.ClothingType
 import com.example.myapplication.domain.model.ColorGroup
+import com.example.myapplication.domain.model.Formality
 import com.example.myapplication.domain.model.LaundryStatus
 import com.example.myapplication.domain.model.Pattern
 import com.example.myapplication.domain.model.SleeveLength
@@ -34,7 +35,8 @@ data class ClothingItemEntity(
     val status: String,
     val brand: String?,
     val imageUrl: String?,
-    val lastWornEpochMillis: Long?
+    val lastWornEpochMillis: Long?,
+    val formality: String?
 )
 
 fun ClothingItemEntity.toDomain(): ClothingItem = ClothingItem(
@@ -56,7 +58,8 @@ fun ClothingItemEntity.toDomain(): ClothingItem = ClothingItem(
     status = LaundryStatus.fromBackend(status),
     brand = brand,
     imageUrl = imageUrl,
-    lastWornDate = InstantCompat.ofEpochMilliOrNull(lastWornEpochMillis)
+    lastWornDate = InstantCompat.ofEpochMilliOrNull(lastWornEpochMillis),
+    formality = formality?.let { Formality.fromBackend(it) }
 )
 
 fun ClothingItem.toEntity(): ClothingItemEntity = ClothingItemEntity(
@@ -78,5 +81,6 @@ fun ClothingItem.toEntity(): ClothingItemEntity = ClothingItemEntity(
     status = status.backendValue,
     brand = brand,
     imageUrl = imageUrl,
-    lastWornEpochMillis = InstantCompat.toEpochMilliOrNull(lastWornDate)
+    lastWornEpochMillis = InstantCompat.toEpochMilliOrNull(lastWornDate),
+    formality = formality?.backendValue
 )

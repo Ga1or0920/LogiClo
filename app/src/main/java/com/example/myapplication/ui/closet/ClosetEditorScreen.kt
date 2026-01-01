@@ -51,6 +51,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
+import android.content.Intent
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.myapplication.R
@@ -257,11 +259,21 @@ private fun ClosetEditorContent(
                 SectionHeader(text = stringResource(id = R.string.closet_editor_section_preview))
                             // Image import: show dialog on tap and launch picker
                             val showImportDialog = remember { mutableStateOf(false) }
+                            val context = LocalContext.current
                             val launcher = rememberLauncherForActivityResult(
-                                contract = ActivityResultContracts.GetContent()
+                                contract = ActivityResultContracts.OpenDocument()
                             ) { uri: Uri? ->
-                                // pass URI string back via provided callback
-                                onImageSelected(uri?.toString())
+                                uri?.let {
+                                    // 永続的なアクセス権限を取得
+                                    try {
+                                        val takeFlags: Int = Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                        context.contentResolver.takePersistableUriPermission(it, takeFlags)
+                                        onImageSelected(it.toString())
+                                    } catch (e: SecurityException) {
+                                        // 権限取得に失敗した場合でもURIを保存（一時的なアクセスのみ）
+                                        onImageSelected(it.toString())
+                                    }
+                                }
                             }
 
                             Box(
@@ -286,7 +298,7 @@ private fun ClosetEditorContent(
                                     confirmButton = {
                                         TextButton(onClick = {
                                             showImportDialog.value = false
-                                            launcher.launch("image/*")
+                                            launcher.launch(arrayOf("image/*"))
                                         }) { Text(text = stringResource(id = R.string.common_yes)) }
                                     },
                                     dismissButton = {

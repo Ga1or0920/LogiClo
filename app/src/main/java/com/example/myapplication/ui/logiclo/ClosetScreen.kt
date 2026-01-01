@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -36,6 +37,21 @@ import com.example.myapplication.ui.logiclo.components.ClothingItemCard
 import com.example.myapplication.ui.theme.LogiCloTheme
 import com.example.myapplication.ui.theme.TextGrey
 import java.util.*
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.net.Uri
+import coil.compose.rememberAsyncImagePainter
+import androidx.compose.ui.platform.LocalContext
+import android.content.Intent
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
+import kotlinx.coroutines.launch
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.ExperimentalFoundationApi
 
 // =============================================================================
 // Screen 2: Closet
@@ -347,7 +363,27 @@ fun ClosetItemRow(
 }
 
 
-@OptIn(ExperimentalMaterial3Api::class)
+private enum class ColorGroup(val label: String, val order: Int) {
+    MONOTONE("モノトーン", 1),
+    EARTH("アース", 2),
+    PALE("パステル", 3),
+    VIVID("ビビッド", 4),
+    PATTERN("その他", 5)
+}
+
+private enum class AddItemSection {
+    NAME, CATEGORY, COLOR, SLEEVE, THICKNESS, FORMALITY, TEMP, WASH
+}
+
+private data class ColorOption(
+    val color: Color,
+    val name: String,
+    val group: ColorGroup,
+    val requiresImage: Boolean = false,  // 画像推奨フラグ
+    val icon: ImageVector? = null  // アイコン（特別な色用）
+)
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun AddItemSheet(
     itemToEdit: UiClothingItem?,
@@ -369,60 +405,152 @@ private fun AddItemSheet(
         mapOf("key" to "coat", "icon" to com.example.myapplication.R.drawable.ic_clothing_outer, "label" to "コート"),
     )}
     // 色と名前のペア
-    data class ColorOption(val color: Color, val name: String)
     val colorOptions = remember { listOf(
-        ColorOption(Color.White, "ホワイト"),
-        ColorOption(Color.Black, "ブラック"),
-        ColorOption(Color.Gray, "グレー"),
-        ColorOption(Color(0xFF1A237E), "ネイビー"),
-        ColorOption(Color.LightGray, "ライトグレー"),
-        ColorOption(Color(0xFFD7CCC8), "ベージュ"),
-        ColorOption(Color(0xFF558B2F), "グリーン"),
-        ColorOption(Color(0xFF795548), "ブラウン"),
-        ColorOption(Color(0xFFE53935), "レッド"),
+        // Monotone
+        ColorOption(Color.White, "ホワイト", ColorGroup.MONOTONE),
+        ColorOption(Color.Black, "ブラック", ColorGroup.MONOTONE),
+        ColorOption(Color.Gray, "グレー", ColorGroup.MONOTONE),
+        ColorOption(Color(0xFF1A237E), "ネイビー", ColorGroup.MONOTONE),
+        
+        // Earth
+        ColorOption(Color(0xFFD7CCC8), "ベージュ", ColorGroup.EARTH),
+        ColorOption(Color(0xFF795548), "ブラウン", ColorGroup.EARTH),
+        ColorOption(Color(0xFF657252), "カーキ", ColorGroup.EARTH),
+
+        // Pale
+        ColorOption(Color(0xFF81D4FA), "水色", ColorGroup.PALE),
+
+        // Vivid
+        ColorOption(Color(0xFFFF4081), "派手色", ColorGroup.VIVID),
+
+        // Pattern
+        ColorOption(Color(0xFF9E9E9E), "柄", ColorGroup.PATTERN, requiresImage = true, icon = Icons.Default.GridOn),
+        ColorOption(Color(0xFFBDBDBD), "ツートーン", ColorGroup.PATTERN, requiresImage = true, icon = Icons.Default.Palette),
     )}
 
-    var categoryKey by remember { mutableStateOf(itemToEdit?.categoryKey ?: "t_shirt") }
-    var name by remember { mutableStateOf(itemToEdit?.name ?: "Tシャツ") }
+    // 編集モードか新規作成かを判定
+    val isEditMode = itemToEdit != null
+
+    var categoryKey by remember { mutableStateOf(itemToEdit?.categoryKey ?: "") }
+    var name by remember { mutableStateOf(itemToEdit?.name ?: "") }
     var brand by remember { mutableStateOf(itemToEdit?.brand ?: "") }
-    var color by remember { mutableStateOf(itemToEdit?.color ?: Color.White) }
-    var isAlwaysWash by remember { mutableStateOf(itemToEdit?.maxWears == 1) }
+    var color by remember { mutableStateOf<Color?>(itemToEdit?.color) }
+    var isAlwaysWash by remember { mutableStateOf<Boolean?>(if (isEditMode) itemToEdit?.maxWears == 1 else null) }
     var maxWears by remember { mutableStateOf(itemToEdit?.maxWears?.toFloat() ?: 1f) }
-    var sleeve by remember { mutableStateOf(itemToEdit?.sleeveLength ?: SleeveLength.SHORT) }
-    var thickness by remember { mutableStateOf(itemToEdit?.thickness ?: Thickness.NORMAL) }
+    var sleeve by remember { mutableStateOf<SleeveLength?>(itemToEdit?.sleeveLength) }
+    var thickness by remember { mutableStateOf<Thickness?>(itemToEdit?.thickness) }
     var customComfortMin by remember { mutableStateOf(itemToEdit?.comfortMinCelsius) }
     var customComfortMax by remember { mutableStateOf(itemToEdit?.comfortMaxCelsius) }
     var showTempRangeDialog by remember { mutableStateOf(false) }
+    var imageUrl by remember { mutableStateOf(itemToEdit?.imageUrl) }
+    var formality by remember { mutableStateOf<Formality?>(itemToEdit?.formality) }
     // 初期ステータス: 0=クローゼット, 1=洗濯カゴ, 2=クリーニング店
     var initialStatusIndex by remember { mutableIntStateOf(0) }
 
+    // バリデーションエラー
+    var validationErrors by remember { mutableStateOf<List<String>>(emptyList()) }
+    var showValidationDialog by remember { mutableStateOf(false) }
+
+    // Context取得
+    val context = LocalContext.current
+
+    // 画像ピッカー（OpenDocumentを使用して永続的なURI権限を取得）
+    val imageLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        uri?.let {
+            // 永続的なアクセス権限を取得
+            try {
+                val takeFlags: Int = Intent.FLAG_GRANT_READ_URI_PERMISSION
+                context.contentResolver.takePersistableUriPermission(it, takeFlags)
+                imageUrl = it.toString()
+            } catch (e: SecurityException) {
+                // 権限取得に失敗した場合でもURIを保存（一時的なアクセスのみ）
+                imageUrl = it.toString()
+            }
+        }
+    }
+
     val onCategorySelected = { cat: Map<String, Any> ->
         categoryKey = cat["key"] as String
-        name = cat["label"] as String
-        val defaults = viewModel.getSmartDefaults(categoryKey)
-        maxWears = (defaults["max"] as Int).toFloat()
-        isAlwaysWash = defaults["always"] as Boolean
-        sleeve = defaults["sleeve"] as SleeveLength
-        thickness = defaults["thickness"] as Thickness
+        if (!isEditMode && name.isEmpty()) {
+            name = cat["label"] as String
+        }
+        // 編集モードでない場合のみ、デフォルト値を設定
+        if (!isEditMode) {
+            val defaults = viewModel.getSmartDefaults(categoryKey)
+            maxWears = (defaults["max"] as Int).toFloat()
+            isAlwaysWash = defaults["always"] as Boolean
+            sleeve = defaults["sleeve"] as SleeveLength
+            thickness = defaults["thickness"] as Thickness
+        }
+    }
+
+    fun validateForm(): List<String> {
+        val errors = mutableListOf<String>()
+        if (name.isBlank()) errors.add("服名を入力してください")
+        if (categoryKey.isEmpty()) errors.add("カテゴリを選択してください")
+        if (color == null) errors.add("色を選択してください")
+        if (sleeve == null) errors.add("袖丈を選択してください")
+        if (thickness == null) errors.add("厚さを選択してください")
+        if (isAlwaysWash == null) errors.add("洗濯頻度を選択してください")
+        return errors
     }
 
     fun saveItem() {
+        // バリデーション
+        val errors = validateForm()
+        if (errors.isNotEmpty()) {
+            validationErrors = errors
+            showValidationDialog = true
+            return
+        }
         val defaults = viewModel.getSmartDefaults(categoryKey)
+        val itemType = defaults["type"] as ItemType
+
+        // 適正温度範囲の計算（カスタム値がない場合はデフォルト値を使用）
+        val comfortRange = if (customComfortMin != null && customComfortMax != null) {
+            customComfortMin to customComfortMax
+        } else {
+            val defaultRange = calculateComfortRange(itemType, thickness!!, sleeve!!)
+            defaultRange.first to defaultRange.second
+        }
+
+        // 雰囲気の計算（手動設定がない場合はカテゴリから自動計算）
+        val finalFormality = formality ?: run {
+            when (categoryKey) {
+                // フォーマル
+                "shirt", "dress_shirt", "jacket", "blazer", "coat", "suit_jacket",
+                "slacks", "dress_pants" -> Formality.FORMAL
+                // ややフォーマル
+                "polo", "sweater", "cardigan", "chino" -> Formality.SEMI_FORMAL
+                // ややカジュアル
+                "knit", "sweatshirt" -> Formality.SOMEWHAT_CASUAL
+                // カジュアル
+                "t_shirt", "tank_top", "hoodie",
+                "denim", "jeans", "shorts" -> Formality.CASUAL
+                // その他
+                else -> Formality.STANDARD
+            }
+        }
+
         val newItem = UiClothingItem(
             id = itemToEdit?.id ?: UUID.randomUUID().toString(),
-            name = name,
+            name = name.trim(),
             brand = brand,
-            type = defaults["type"] as ItemType,
+            type = itemType,
             categoryKey = categoryKey,
-            color = color,
+            color = color!!, // バリデーション済みなのでnon-null
             icon = categories.first { it["key"] == categoryKey }["icon"] as Int,
-            maxWears = if (isAlwaysWash) 1 else maxWears.toInt(),
+            maxWears = if (isAlwaysWash == true) 1 else maxWears.toInt(),
             isDirty = false,
             cleaningType = CleaningType.HOME,
-            sleeveLength = sleeve,
-            thickness = thickness,
-            comfortMinCelsius = customComfortMin,
-            comfortMaxCelsius = customComfortMax,
+            sleeveLength = sleeve!!, // バリデーション済みなのでnon-null
+            thickness = thickness!!, // バリデーション済みなのでnon-null
+            comfortMinCelsius = comfortRange.first,
+            comfortMaxCelsius = comfortRange.second,
+            imageUrl = imageUrl,
+            formality = finalFormality,
         )
         // 選択されたステータスに応じて保存
         val status = when (initialStatusIndex) {
@@ -438,7 +566,7 @@ private fun AddItemSheet(
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
     ) {
         Scaffold(
             topBar = {
@@ -514,49 +642,112 @@ private fun AddItemSheet(
                     ItemType.BOTTOM -> com.example.myapplication.R.drawable.ic_clothing_bottom
                 }
 
-                Column(
+                // プレビュー（コンパクト版）
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        painter = painterResource(id = previewIcon),
-                        contentDescription = name,
-                        tint = color,
-                        modifier = Modifier
-                            .size(80.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
-                            .border(1.dp, Color.Gray, RoundedCornerShape(16.dp))
-                            .padding(16.dp)
-                    )
-                    OutlinedTextField(
-                        value = name,
-                        onValueChange = { name = it },
-                        textStyle = LocalTextStyle.current.copy(textAlign = TextAlign.Center, fontWeight = FontWeight.Bold),
-                        modifier = Modifier.width(200.dp)
-                    )
-                }
-                Spacer(Modifier.height(32.dp))
-
-                Text("ブランド", style = MaterialTheme.typography.titleSmall, color = TextGrey)
-                OutlinedTextField(
-                    value = brand,
-                    onValueChange = { brand = it },
-                    label = { Text("例: UNIQLO") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(32.dp))
-
-                Text("カテゴリ", style = MaterialTheme.typography.titleSmall, color = TextGrey)
-                Spacer(Modifier.height(12.dp))
-                LazyVerticalGrid(
-                    columns = GridCells.Adaptive(64.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.height(240.dp) // Adjust height as needed
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    items(categories) { cat ->
+                    // アイコンまたは画像プレビュー
+                    Box(
+                        modifier = Modifier
+                            .size(64.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .border(1.dp, Color.Gray, RoundedCornerShape(12.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (imageUrl != null) {
+                            androidx.compose.foundation.Image(
+                                painter = rememberAsyncImagePainter(imageUrl),
+                                contentDescription = name,
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .clip(RoundedCornerShape(12.dp)),
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                            )
+                        } else {
+                            Icon(
+                                painter = painterResource(id = previewIcon),
+                                contentDescription = name,
+                                tint = color ?: Color.Gray,
+                                modifier = Modifier.size(40.dp).padding(4.dp)
+                            )
+                        }
+                    }
+                    // 画像インポート・クリアボタン
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        OutlinedButton(
+                            onClick = { imageLauncher.launch(arrayOf("image/*")) },
+                            modifier = Modifier.height(32.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Image,
+                                contentDescription = "画像をインポート",
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(if (imageUrl != null) "変更" else "画像", fontSize = 12.sp)
+                        }
+                        if (imageUrl != null) {
+                            OutlinedButton(
+                                onClick = { imageUrl = null },
+                                modifier = Modifier.height(32.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Delete,
+                                    contentDescription = "画像をクリア",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text("削除", fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+
+                // 服名とブランド（横並び）
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("服名 *", style = MaterialTheme.typography.labelMedium, color = TextGrey)
+                        Spacer(Modifier.height(4.dp))
+                        OutlinedTextField(
+                            value = name,
+                            onValueChange = { name = it },
+                            placeholder = { Text("例: 白Tシャツ", fontSize = 14.sp) },
+                            modifier = Modifier.fillMaxWidth(),
+                            isError = name.isBlank(),
+                            singleLine = true
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("ブランド", style = MaterialTheme.typography.labelMedium, color = TextGrey)
+                        Spacer(Modifier.height(4.dp))
+                        OutlinedTextField(
+                            value = brand,
+                            onValueChange = { brand = it },
+                            placeholder = { Text("例: UNIQLO", fontSize = 14.sp) },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+
+                Text("カテゴリ *", style = MaterialTheme.typography.labelMedium, color = TextGrey)
+                Spacer(Modifier.height(4.dp))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    categories.forEach { cat ->
                         val isSelected = categoryKey == cat["key"]
                         CategoryChip(
                             icon = cat["icon"] as Int,
@@ -566,89 +757,232 @@ private fun AddItemSheet(
                         )
                     }
                 }
-                Spacer(Modifier.height(32.dp))
-
-                Text("色", style = MaterialTheme.typography.titleSmall, color = TextGrey)
                 Spacer(Modifier.height(12.dp))
-                LazyVerticalGrid(
-                    columns = GridCells.Adaptive(56.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.height(160.dp)
-                ) {
-                    items(colorOptions) { option ->
-                        val isSelected = color.value == option.color.value
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable { color = option.color }
-                                .background(
-                                    if (isSelected) MaterialTheme.colorScheme.primaryContainer
-                                    else Color.Transparent
-                                )
-                                .padding(4.dp)
-                        ) {
-                            Box(
+
+                Text("色 *", style = MaterialTheme.typography.labelMedium, color = TextGrey)
+                Spacer(Modifier.height(4.dp))
+                ColorGroup.values().sortedBy { it.order }.forEach { group ->
+                    Text(
+                        text = group.label,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontSize = 10.sp,
+                        color = TextGrey,
+                        modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
+                    )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        colorOptions.filter { it.group == group }.forEach { option ->
+                            val isSelected = color?.value == option.color.value
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
                                 modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(CircleShape)
-                                    .background(option.color)
-                                    .border(
-                                        width = 2.dp,
-                                        color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Gray.copy(alpha = 0.5f),
-                                        shape = CircleShape
+                                    .width(48.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .clickable { color = option.color }
+                                    .background(
+                                        if (isSelected) MaterialTheme.colorScheme.primaryContainer
+                                        else Color.Transparent
                                     )
+                                    .padding(2.dp)
                             ) {
-                                if (isSelected) {
-                                    Icon(
-                                        Icons.Default.Check,
-                                        contentDescription = "Selected",
-                                        tint = if (option.color == Color.Black) Color.White else Color.Black,
-                                        modifier = Modifier.align(Alignment.Center).size(20.dp)
-                                    )
+                                Box(
+                                    modifier = Modifier
+                                        .size(28.dp)
+                                        .clip(CircleShape)
+                                        .background(option.color)
+                                        .border(
+                                            width = 1.5.dp,
+                                            color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Gray.copy(alpha = 0.5f),
+                                            shape = CircleShape
+                                        )
+                                ) {
+                                    if (option.icon != null) {
+                                        Icon(
+                                            option.icon,
+                                            contentDescription = option.name,
+                                            tint = Color.White,
+                                            modifier = Modifier.align(Alignment.Center).size(16.dp)
+                                        )
+                                    } else if (isSelected) {
+                                        Icon(
+                                            Icons.Default.Check,
+                                            contentDescription = "Selected",
+                                            tint = if (option.color == Color.Black) Color.White else Color.Black,
+                                            modifier = Modifier.align(Alignment.Center).size(16.dp)
+                                        )
+                                    }
                                 }
+                                Spacer(Modifier.height(2.dp))
+                                Text(
+                                    text = option.name,
+                                    fontSize = 9.sp,
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary else TextGrey,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    textAlign = TextAlign.Center,
+                                    lineHeight = 10.sp
+                                )
                             }
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                text = option.name,
-                                style = MaterialTheme.typography.labelSmall,
-                                fontSize = 10.sp,
-                                color = if (isSelected) MaterialTheme.colorScheme.primary else TextGrey,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                        }
+                    }
+                }
+
+                // 画像インポート推奨メッセージ（コンパクト版）
+                val selectedColorOption = colorOptions.find { it.color.value == color?.value }
+                if (selectedColorOption?.requiresImage == true && imageUrl == null) {
+                    Spacer(Modifier.height(4.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text(
+                            "画像登録推奨",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+
+                // スペックのヘッダーとリセットボタン
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("スペック", style = MaterialTheme.typography.labelMedium, color = TextGrey)
+                    TextButton(
+                        onClick = {
+                            sleeve = null
+                            thickness = null
+                            formality = null
+                            customComfortMin = null
+                            customComfortMax = null
+                        },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Refresh,
+                            contentDescription = "リセット",
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(Modifier.width(2.dp))
+                        Text("リセット", fontSize = 12.sp)
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+
+                // 袖丈と厚さ（横並び）
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("袖丈 *", style = MaterialTheme.typography.labelSmall, fontSize = 11.sp, color = TextGrey)
+                        Spacer(Modifier.height(2.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            FilterChip(
+                                selected = sleeve == SleeveLength.SHORT,
+                                onClick = { sleeve = SleeveLength.SHORT },
+                                label = { Text("半袖", fontSize = 11.sp) },
+                                modifier = Modifier.weight(1f)
+                            )
+                            FilterChip(
+                                selected = sleeve == SleeveLength.LONG,
+                                onClick = { sleeve = SleeveLength.LONG },
+                                label = { Text("長袖", fontSize = 11.sp) },
+                                modifier = Modifier.weight(1f)
+                            )
+                            FilterChip(
+                                selected = sleeve == SleeveLength.NONE,
+                                onClick = { sleeve = SleeveLength.NONE },
+                                label = { Text("なし", fontSize = 11.sp) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("厚さ *", style = MaterialTheme.typography.labelSmall, fontSize = 11.sp, color = TextGrey)
+                        Spacer(Modifier.height(2.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            FilterChip(
+                                selected = thickness == Thickness.THIN,
+                                onClick = { thickness = Thickness.THIN },
+                                label = { Text("薄", fontSize = 11.sp) },
+                                modifier = Modifier.weight(1f)
+                            )
+                            FilterChip(
+                                selected = thickness == Thickness.NORMAL,
+                                onClick = { thickness = Thickness.NORMAL },
+                                label = { Text("普通", fontSize = 11.sp) },
+                                modifier = Modifier.weight(1f)
+                            )
+                            FilterChip(
+                                selected = thickness == Thickness.THICK,
+                                onClick = { thickness = Thickness.THICK },
+                                label = { Text("厚", fontSize = 11.sp) },
+                                modifier = Modifier.weight(1f)
                             )
                         }
                     }
                 }
-                Spacer(Modifier.height(32.dp))
+                Spacer(Modifier.height(8.dp))
 
-                Text("スペック", style = MaterialTheme.typography.titleSmall, color = TextGrey)
-                SegmentedControl(
-                    label = "袖丈",
-                    value = sleeve,
-                    options = mapOf(
-                        SleeveLength.SHORT to "半袖",
-                        SleeveLength.LONG to "長袖",
-                        SleeveLength.NONE to "なし"
-                    ),
-                    onChanged = { sleeve = it }
-                )
-                SegmentedControl(
-                    label = "厚さ",
-                    value = thickness,
-                    options = mapOf(
-                        Thickness.THIN to "薄手",
-                        Thickness.NORMAL to "普通",
-                        Thickness.THICK to "厚手"
-                    ),
-                    onChanged = { thickness = it }
-                )
-                Spacer(Modifier.height(16.dp))
+                // 雰囲気選択（コンパクト版）
+                Text("雰囲気", style = MaterialTheme.typography.labelSmall, fontSize = 11.sp, color = TextGrey)
+                Spacer(Modifier.height(2.dp))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    FilterChip(
+                        selected = formality == Formality.FORMAL,
+                        onClick = { formality = Formality.FORMAL },
+                        label = { Text("フォーマル", fontSize = 11.sp) }
+                    )
+                    FilterChip(
+                        selected = formality == Formality.SEMI_FORMAL,
+                        onClick = { formality = Formality.SEMI_FORMAL },
+                        label = { Text("ややフォーマル", fontSize = 11.sp) }
+                    )
+                    FilterChip(
+                        selected = formality == Formality.SOMEWHAT_CASUAL,
+                        onClick = { formality = Formality.SOMEWHAT_CASUAL },
+                        label = { Text("ややカジュアル", fontSize = 11.sp) }
+                    )
+                    FilterChip(
+                        selected = formality == Formality.CASUAL,
+                        onClick = { formality = Formality.CASUAL },
+                        label = { Text("カジュアル", fontSize = 11.sp) }
+                    )
+                    FilterChip(
+                        selected = formality == Formality.STANDARD,
+                        onClick = { formality = Formality.STANDARD },
+                        label = { Text("標準", fontSize = 11.sp) }
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
 
                 // 気温パラメーター表示
                 val defaults = viewModel.getSmartDefaults(categoryKey)
                 val itemType = defaults["type"] as ItemType
-                val defaultRange = calculateComfortRange(itemType, thickness, sleeve)
+                // ローカル変数に保存してスマートキャスト問題を回避
+                val currentThickness = thickness
+                val currentSleeve = sleeve
+                val defaultRange = if (currentThickness != null && currentSleeve != null) {
+                    calculateComfortRange(itemType, currentThickness, currentSleeve)
+                } else {
+                    20.0 to 25.0 // デフォルト値
+                }
                 val displayMin = customComfortMin ?: defaultRange.first
                 val displayMax = customComfortMax ?: defaultRange.second
                 val isCustomized = customComfortMin != null || customComfortMax != null
@@ -664,7 +998,7 @@ private fun AddItemSheet(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
+                            .padding(8.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -673,33 +1007,32 @@ private fun AddItemSheet(
                                 Icons.Default.Thermostat,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(16.dp)
                             )
-                            Spacer(Modifier.width(8.dp))
-                            Column {
-                                Text("適温範囲", style = MaterialTheme.typography.bodyMedium)
-                                if (isCustomized) {
-                                    Text(
-                                        "カスタム設定中",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.secondary
-                                    )
-                                }
+                            Spacer(Modifier.width(4.dp))
+                            Text("適温範囲", fontSize = 12.sp)
+                            if (isCustomized) {
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    "(カスタム)",
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.secondary
+                                )
                             }
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                "${displayMin.toInt()}℃ 〜 ${displayMax.toInt()}℃",
-                                style = MaterialTheme.typography.bodyLarge,
+                                "${displayMin.toInt()}℃〜${displayMax.toInt()}℃",
+                                fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary
                             )
-                            Spacer(Modifier.width(4.dp))
+                            Spacer(Modifier.width(2.dp))
                             Icon(
                                 Icons.Default.Edit,
                                 contentDescription = "編集",
                                 tint = TextGrey,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(14.dp)
                             )
                         }
                     }
@@ -725,36 +1058,78 @@ private fun AddItemSheet(
                         }
                     )
                 }
-                Spacer(Modifier.height(32.dp))
+                Spacer(Modifier.height(8.dp))
 
+                // 洗濯頻度選択
+                Text("洗濯頻度 *", style = MaterialTheme.typography.labelSmall, fontSize = 11.sp, color = TextGrey)
+                Spacer(Modifier.height(2.dp))
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("毎回洗う", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
-                    Switch(checked = isAlwaysWash, onCheckedChange = { isAlwaysWash = it })
+                    FilterChip(
+                        selected = isAlwaysWash == true,
+                        onClick = {
+                            isAlwaysWash = true
+                            maxWears = 1f
+                        },
+                        label = { Text("毎回洗う", fontSize = 11.sp) },
+                        modifier = Modifier.weight(1f)
+                    )
+                    FilterChip(
+                        selected = isAlwaysWash == false,
+                        onClick = {
+                            isAlwaysWash = false
+                            if (maxWears < 2f) maxWears = 3f
+                        },
+                        label = { Text("時々洗う", fontSize = 11.sp) },
+                        modifier = Modifier.weight(1f)
+                    )
                 }
-                AnimatedVisibility(!isAlwaysWash) {
+                AnimatedVisibility(isAlwaysWash == false) {
                     Column {
+                        Spacer(Modifier.height(4.dp))
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween,
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                           Text("洗濯頻度", color = TextGrey)
-                           Text("${maxWears.toInt()}回ごと", fontWeight = FontWeight.Bold)
+                           Text("洗濯頻度", fontSize = 11.sp, color = TextGrey)
+                           Text("${maxWears.toInt()}回ごと", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                         Slider(
                             value = maxWears,
                             onValueChange = { maxWears = it },
                             valueRange = 2f..20f,
-                            steps = 18
+                            steps = 18,
+                            modifier = Modifier.height(32.dp)
                         )
                     }
                 }
-                Spacer(Modifier.height(40.dp))
+                Spacer(Modifier.height(16.dp))
             }
+        }
+
+        // バリデーションエラーダイアログ
+        if (showValidationDialog) {
+            AlertDialog(
+                onDismissRequest = { showValidationDialog = false },
+                title = { Text("入力エラー") },
+                text = {
+                    Column {
+                        Text("以下の項目を入力・選択してください：")
+                        Spacer(Modifier.height(8.dp))
+                        validationErrors.forEach { error ->
+                            Text("• $error", style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showValidationDialog = false }) {
+                        Text("OK")
+                    }
+                }
+            )
         }
     }
 }
@@ -766,16 +1141,21 @@ private fun CategoryChip(icon: Int, label: String, isSelected: Boolean, onTap: (
 
     Column(
         modifier = Modifier
-            .size(64.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .size(56.dp)
+            .clip(RoundedCornerShape(8.dp))
             .background(backgroundColor)
             .clickable(onClick = onTap),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Icon(painterResource(id = icon), contentDescription = label, tint = contentColor)
-        Spacer(Modifier.height(4.dp))
-        Text(label, fontSize = 10.sp, color = contentColor)
+        Icon(
+            painterResource(id = icon),
+            contentDescription = label,
+            tint = contentColor,
+            modifier = Modifier.size(20.dp)
+        )
+        Spacer(Modifier.height(2.dp))
+        Text(label, fontSize = 9.sp, color = contentColor)
     }
 }
 

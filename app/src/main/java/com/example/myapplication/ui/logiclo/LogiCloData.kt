@@ -14,6 +14,12 @@ enum class CleaningType { HOME, DRY }
 enum class FitType { SLIM, REGULAR, LOOSE }
 enum class SleeveLength { SHORT, LONG, NONE }
 enum class Thickness { THIN, NORMAL, THICK }
+enum class Formality { FORMAL, SEMI_FORMAL, SOMEWHAT_CASUAL, CASUAL, STANDARD }
+
+// カラーグループの列挙型（domain model から分離）
+enum class UiColorGroup {
+    MONOTONE, EARTH_TONE, NAVY_BLUE, PASTEL, VIVID, OTHER, UNKNOWN
+}
 
 data class UiClothingItem(
     val id: String,
@@ -25,6 +31,7 @@ data class UiClothingItem(
     val thickness: Thickness = Thickness.NORMAL,
     val color: Color,
     val colorName: String = "",
+    val colorGroup: UiColorGroup = UiColorGroup.UNKNOWN,
     val icon: Int,
     val maxWears: Int,
     var currentWears: Int = 0,
@@ -33,6 +40,9 @@ data class UiClothingItem(
     val fit: FitType = FitType.REGULAR,
     val comfortMinCelsius: Double? = null,
     val comfortMaxCelsius: Double? = null,
+    val tempDiff: Double? = null,
+    val imageUrl: String? = null,
+    val formality: Formality? = null,
 ) {
     /** 袖丈に応じた表示用アイコンを返す */
     val displayIcon: Int

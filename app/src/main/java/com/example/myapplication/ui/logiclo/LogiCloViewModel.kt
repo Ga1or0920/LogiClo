@@ -71,9 +71,14 @@ class LogiCloViewModel(
         }
         // Observe weather changes and update UI
         viewModelScope.launch {
-            weatherRepository.observeCurrentWeather().collect { weather ->
-                _uiState.update { it.copy(weather = weather) }
-                _refreshSuggestion()
+            try {
+                weatherRepository.observeCurrentWeather().collect { weather ->
+                    _uiState.update { it.copy(weather = weather, weatherError = null) }
+                    _refreshSuggestion()
+                }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                _uiState.update { it.copy(weatherError = "天気データを取得できませんでした") }
             }
         }
         // Observe user preferences for location override
@@ -400,6 +405,56 @@ class LogiCloViewModel(
             ?: 0
     }
 
+    /**
+     * Calculate temperature difference from item's comfort range.
+     * Returns null if within range, positive if too hot, negative if too cold.
+     */
+    private fun calculateTempDiff(item: UiClothingItem, currentTemp: Double): Double? {
+        val minTemp = item.comfortMinCelsius
+        val maxTemp = item.comfortMaxCelsius
+
+        return when {
+            minTemp == null || maxTemp == null -> null // No comfort range defined
+            currentTemp < minTemp -> currentTemp - minTemp // Negative = too cold
+            currentTemp > maxTemp -> currentTemp - maxTemp // Positive = too hot
+            else -> null // Within range
+        }
+    }
+
+    /**
+     * Check if a top-bottom combination is valid (not tacky).
+     * Returns true if the combination is acceptable, false otherwise.
+     */
+    private fun isValidCombination(
+        top: UiClothingItem,
+        bottom: UiClothingItem,
+        precipitationProbability: Int
+    ): Boolean {
+        // Rule 1: Exclude VIVID + VIVID combinations (両方が原色/柄/ツートーン)
+        if (top.colorGroup == UiColorGroup.VIVID && bottom.colorGroup == UiColorGroup.VIVID) {
+            return false
+        }
+
+        // Rule 2: Exclude same color combinations (except MONOTONE and EARTH_TONE are OK)
+        if (top.color == bottom.color) {
+            val isBothMonotone = top.colorGroup == UiColorGroup.MONOTONE && bottom.colorGroup == UiColorGroup.MONOTONE
+            val isBothEarthTone = top.colorGroup == UiColorGroup.EARTH_TONE && bottom.colorGroup == UiColorGroup.EARTH_TONE
+            if (!isBothMonotone && !isBothEarthTone) {
+                return false
+            }
+        }
+
+        // Rule 3: Rain filter - exclude light-colored bottoms when rain is likely
+        if (precipitationProbability >= 50) {
+            // Exclude white MONOTONE or beige EARTH_TONE bottoms (雨天時の泥はね対策)
+            if (bottom.colorGroup == UiColorGroup.MONOTONE || bottom.colorGroup == UiColorGroup.EARTH_TONE) {
+                return false
+            }
+        }
+
+        return true
+    }
+
     private fun _refreshSuggestion() {
         val cleanItems = _uiState.value.inventory.filter { !it.isDirty }
         val state = _uiState.value
@@ -419,35 +474,39 @@ class LogiCloViewModel(
             )
         }
 
-        // 体感温度に基づくフィルタリング
-        when {
-            effectiveTemp < 15.0 -> {
-                // 寒い: 厚手・長袖を優先
-                tops.sortByDescending { it.thickness == Thickness.THICK }
-                tops.removeAll { it.sleeveLength == SleeveLength.SHORT && tops.any { t -> t.sleeveLength == SleeveLength.LONG } }
-            }
-            effectiveTemp < 20.0 -> {
-                // 涼しい: 普通の服、長袖を優先
-                tops.removeAll { it.sleeveLength == SleeveLength.SHORT && tops.any { t -> t.sleeveLength == SleeveLength.LONG } }
-            }
-            effectiveTemp > 25.0 -> {
-                // 暑い: 薄手・半袖を優先
-                tops.sortByDescending { it.thickness == Thickness.THIN || it.sleeveLength == SleeveLength.SHORT }
-                tops.removeAll { it.thickness == Thickness.THICK && tops.any { t -> t.thickness != Thickness.THICK } }
-            }
-            // 20-25℃は快適: フィルタリングなし
+        // Sort by temperature difference (closest to comfort range first)
+        tops.sortBy { item ->
+            val diff = calculateTempDiff(item, effectiveTemp)
+            if (diff == null) 0.0 else kotlin.math.abs(diff)
+        }
+        bottoms.sortBy { item ->
+            val diff = calculateTempDiff(item, effectiveTemp)
+            if (diff == null) 0.0 else kotlin.math.abs(diff)
         }
 
-        // モードによるフィルタリング
-        if (state.selectedMode == AppMode.OFFICE) {
-            tops.removeAll { it.name.contains("パーカー") || it.name.contains("Tシャツ") }
-            bottoms.removeAll { it.name.contains("デニム") }
-        } else {
-            tops.removeAll { it.name.contains("シャツ") }
+        // Apply non-tacky combination filter
+        val precipitationProbability = state.weather?.precipitationProbability ?: 0
+        var suggestedTop: UiClothingItem? = null
+        var suggestedBottom: UiClothingItem? = null
+
+        // Find the first valid top-bottom combination
+        outerLoop@ for (top in tops) {
+            for (bottom in bottoms) {
+                if (isValidCombination(top, bottom, precipitationProbability)) {
+                    suggestedTop = top
+                    suggestedBottom = bottom
+                    break@outerLoop
+                }
+            }
         }
 
-        val suggestedTop = if (tops.isNotEmpty()) tops.random(Random) else null
-        val suggestedBottom = if (bottoms.isNotEmpty()) bottoms.random(Random) else null
+        // Fallback: if no valid combination found, use the best single items
+        if (suggestedTop == null && tops.isNotEmpty()) {
+            suggestedTop = tops.first()
+        }
+        if (suggestedBottom == null && bottoms.isNotEmpty()) {
+            suggestedBottom = bottoms.first()
+        }
 
         // アウターの判定:
         // - 常に外気温を基準にする（室内モードでも移動時などは外気温が重要）
@@ -456,27 +515,32 @@ class LogiCloViewModel(
             isTomorrow = state.isTomorrow,
             timeId = state.selectedTimeId
         )
-        val needsOuter = outdoorTemp < 20.0
+
+        // Sort outers by temperature difference
+        outers.sortBy { item ->
+            val diff = calculateTempDiff(item, outdoorTemp)
+            if (diff == null) 0.0 else kotlin.math.abs(diff)
+        }
+
         val suggestedOuter = when {
             state.selectedMode == AppMode.CASUAL && state.selectedTimeId == "spot" && outdoorTemp > 15.0 -> null
-            needsOuter && outers.isNotEmpty() -> {
-                // 寒さに応じてアウターを選択
-                if (outdoorTemp < 10.0) {
-                    outers.filter { it.thickness == Thickness.THICK }.randomOrNull() ?: outers.random(Random)
-                } else {
-                    outers.random(Random)
-                }
-            }
-            outdoorTemp > 25.0 -> null
-            outers.isNotEmpty() -> outers.random(Random)
+            outers.isNotEmpty() -> outers.first()
             else -> null
         }
+
+        // Calculate temperature differences for suggested items
+        val topTempDiff = suggestedTop?.let { calculateTempDiff(it, effectiveTemp) }
+        val bottomTempDiff = suggestedBottom?.let { calculateTempDiff(it, effectiveTemp) }
+        val outerTempDiff = suggestedOuter?.let { calculateTempDiff(it, outdoorTemp) }
 
         _uiState.update {
             it.copy(
                 suggestedTop = suggestedTop,
                 suggestedBottom = suggestedBottom,
-                suggestedOuter = suggestedOuter
+                suggestedOuter = suggestedOuter,
+                suggestedTopTempDiff = topTempDiff,
+                suggestedBottomTempDiff = bottomTempDiff,
+                suggestedOuterTempDiff = outerTempDiff
             )
         }
     }
@@ -495,26 +559,63 @@ class LogiCloViewModel(
         val state = _uiState.value
         val cleanItems = state.inventory.filter { !it.isDirty }
 
+        val effectiveTemp = if (state.selectedEnv == EnvMode.INDOOR) {
+            state.indoorTargetTemp.toDouble()
+        } else {
+            getEffectiveTempForTimeSlot(
+                weather = state.weather,
+                isTomorrow = state.isTomorrow,
+                timeId = state.selectedTimeId
+            )
+        }
+
+        val outdoorTemp = getEffectiveTempForTimeSlot(
+            weather = state.weather,
+            isTomorrow = state.isTomorrow,
+            timeId = state.selectedTimeId
+        )
+
         when (type) {
             ItemType.OUTER -> {
                 val currentOuter = state.suggestedOuter
-                val outers = cleanItems.filter { it.type == ItemType.OUTER && it.id != currentOuter?.id }
+                val outers = cleanItems.filter { it.type == ItemType.OUTER && it.id != currentOuter?.id }.toMutableList()
+                outers.sortBy { item ->
+                    val diff = calculateTempDiff(item, outdoorTemp)
+                    if (diff == null) 0.0 else kotlin.math.abs(diff)
+                }
                 if (outers.isNotEmpty()) {
-                    _uiState.update { it.copy(suggestedOuter = outers.random(Random)) }
+                    val candidates = outers.take(3)
+                    val newOuter = candidates.random()
+                    val tempDiff = calculateTempDiff(newOuter, outdoorTemp)
+                    _uiState.update { it.copy(suggestedOuter = newOuter, suggestedOuterTempDiff = tempDiff) }
                 }
             }
             ItemType.TOP -> {
                 val currentTop = state.suggestedTop
-                val tops = cleanItems.filter { it.type == ItemType.TOP && it.id != currentTop?.id }
+                val tops = cleanItems.filter { it.type == ItemType.TOP && it.id != currentTop?.id }.toMutableList()
+                tops.sortBy { item ->
+                    val diff = calculateTempDiff(item, effectiveTemp)
+                    if (diff == null) 0.0 else kotlin.math.abs(diff)
+                }
                 if (tops.isNotEmpty()) {
-                    _uiState.update { it.copy(suggestedTop = tops.random(Random)) }
+                    val candidates = tops.take(3)
+                    val newTop = candidates.random()
+                    val tempDiff = calculateTempDiff(newTop, effectiveTemp)
+                    _uiState.update { it.copy(suggestedTop = newTop, suggestedTopTempDiff = tempDiff) }
                 }
             }
             ItemType.BOTTOM -> {
                 val currentBottom = state.suggestedBottom
-                val bottoms = cleanItems.filter { it.type == ItemType.BOTTOM && it.id != currentBottom?.id }
+                val bottoms = cleanItems.filter { it.type == ItemType.BOTTOM && it.id != currentBottom?.id }.toMutableList()
+                bottoms.sortBy { item ->
+                    val diff = calculateTempDiff(item, effectiveTemp)
+                    if (diff == null) 0.0 else kotlin.math.abs(diff)
+                }
                 if (bottoms.isNotEmpty()) {
-                    _uiState.update { it.copy(suggestedBottom = bottoms.random(Random)) }
+                    val candidates = bottoms.take(3)
+                    val newBottom = candidates.random()
+                    val tempDiff = calculateTempDiff(newBottom, effectiveTemp)
+                    _uiState.update { it.copy(suggestedBottom = newBottom, suggestedBottomTempDiff = tempDiff) }
                 }
             }
         }
@@ -845,6 +946,27 @@ class LogiCloViewModel(
             }
         }
 
+        val uiFormality = this.formality?.let { domainFormality ->
+            when (domainFormality) {
+                com.example.myapplication.domain.model.Formality.FORMAL -> com.example.myapplication.ui.logiclo.Formality.FORMAL
+                com.example.myapplication.domain.model.Formality.SEMI_FORMAL -> com.example.myapplication.ui.logiclo.Formality.SEMI_FORMAL
+                com.example.myapplication.domain.model.Formality.SOMEWHAT_CASUAL -> com.example.myapplication.ui.logiclo.Formality.SOMEWHAT_CASUAL
+                com.example.myapplication.domain.model.Formality.CASUAL -> com.example.myapplication.ui.logiclo.Formality.CASUAL
+                com.example.myapplication.domain.model.Formality.STANDARD -> com.example.myapplication.ui.logiclo.Formality.STANDARD
+                com.example.myapplication.domain.model.Formality.UNKNOWN -> null
+            }
+        }
+
+        val uiColorGroup = when (this.colorGroup) {
+            com.example.myapplication.domain.model.ColorGroup.MONOTONE -> UiColorGroup.MONOTONE
+            com.example.myapplication.domain.model.ColorGroup.EARTH_TONE -> UiColorGroup.EARTH_TONE
+            com.example.myapplication.domain.model.ColorGroup.NAVY_BLUE -> UiColorGroup.NAVY_BLUE
+            com.example.myapplication.domain.model.ColorGroup.PASTEL -> UiColorGroup.PASTEL
+            com.example.myapplication.domain.model.ColorGroup.VIVID -> UiColorGroup.VIVID
+            com.example.myapplication.domain.model.ColorGroup.OTHER -> UiColorGroup.OTHER
+            com.example.myapplication.domain.model.ColorGroup.UNKNOWN -> UiColorGroup.UNKNOWN
+        }
+
         return UiClothingItem(
             id = this.id,
             name = this.name,
@@ -855,12 +977,17 @@ class LogiCloViewModel(
             thickness = Thickness.values().find { it.name.equals(this.thickness.name, true) } ?: Thickness.NORMAL,
             color = uiColor,
             colorName = colorDisplayName,
+            colorGroup = uiColorGroup,
             icon = uiIcon,
             maxWears = this.maxWears,
             currentWears = this.currentWears,
             isDirty = this.status == LaundryStatus.DIRTY,
             cleaningType = uiCleaningType,
-            fit = FitType.REGULAR // Domain doesn't have FitType yet
+            fit = FitType.REGULAR, // Domain doesn't have FitType yet
+            comfortMinCelsius = this.comfortMinCelsius,
+            comfortMaxCelsius = this.comfortMaxCelsius,
+            imageUrl = this.imageUrl,
+            formality = uiFormality
         )
     }
 
@@ -885,6 +1012,26 @@ class LogiCloViewModel(
         val argb = this.color.value.toLong()
         val hex = String.format("#%08X", argb)
 
+        val domainFormality = this.formality?.let { uiFormality ->
+            when (uiFormality) {
+                com.example.myapplication.ui.logiclo.Formality.FORMAL -> com.example.myapplication.domain.model.Formality.FORMAL
+                com.example.myapplication.ui.logiclo.Formality.SEMI_FORMAL -> com.example.myapplication.domain.model.Formality.SEMI_FORMAL
+                com.example.myapplication.ui.logiclo.Formality.SOMEWHAT_CASUAL -> com.example.myapplication.domain.model.Formality.SOMEWHAT_CASUAL
+                com.example.myapplication.ui.logiclo.Formality.CASUAL -> com.example.myapplication.domain.model.Formality.CASUAL
+                com.example.myapplication.ui.logiclo.Formality.STANDARD -> com.example.myapplication.domain.model.Formality.STANDARD
+            }
+        }
+
+        val domainColorGroup = when (this.colorGroup) {
+            UiColorGroup.MONOTONE -> ColorGroup.MONOTONE
+            UiColorGroup.EARTH_TONE -> ColorGroup.EARTH_TONE
+            UiColorGroup.NAVY_BLUE -> ColorGroup.NAVY_BLUE
+            UiColorGroup.PASTEL -> ColorGroup.PASTEL
+            UiColorGroup.VIVID -> ColorGroup.VIVID
+            UiColorGroup.OTHER -> ColorGroup.OTHER
+            UiColorGroup.UNKNOWN -> ColorGroup.UNKNOWN
+        }
+
         return DomainClothingItem(
             id = this.id,
             name = this.name,
@@ -893,14 +1040,18 @@ class LogiCloViewModel(
             sleeveLength = com.example.myapplication.domain.model.SleeveLength.values().find { it.name.equals(this.sleeveLength.name, true) } ?: com.example.myapplication.domain.model.SleeveLength.NONE,
             thickness = com.example.myapplication.domain.model.Thickness.values().find { it.name.equals(this.thickness.name, true) } ?: com.example.myapplication.domain.model.Thickness.NORMAL,
             colorHex = hex,
-            colorGroup = ColorGroup.UNKNOWN,
+            colorGroup = domainColorGroup,
             pattern = Pattern.UNKNOWN,
             maxWears = this.maxWears,
             currentWears = this.currentWears,
             isAlwaysWash = this.maxWears == 1,
             cleaningType = domainCleaningType,
             status = domainStatus,
-            brand = this.brand
+            brand = this.brand,
+            comfortMinCelsius = this.comfortMinCelsius,
+            comfortMaxCelsius = this.comfortMaxCelsius,
+            imageUrl = this.imageUrl,
+            formality = domainFormality
         )
     }
 
@@ -947,6 +1098,7 @@ data class LogiCloUiState(
 
     // Weather State
     val weather: WeatherSnapshot? = null,
+    val weatherError: String? = null,  // 天気データ取得エラー
 
     // Inventory State
     val inventory: List<UiClothingItem> = emptyList(), // Changed from generateMockItems()
@@ -955,6 +1107,10 @@ data class LogiCloUiState(
     val suggestedOuter: UiClothingItem? = null,
     val suggestedTop: UiClothingItem? = null,
     val suggestedBottom: UiClothingItem? = null,
+    // Temperature difference from comfort range (null = within range, positive = too hot, negative = too cold)
+    val suggestedOuterTempDiff: Double? = null,
+    val suggestedTopTempDiff: Double? = null,
+    val suggestedBottomTempDiff: Double? = null,
 
     // Debug Override State
     val debugTemperatureOverride: Double? = null,  // nullの場合は通常の気温を使用
