@@ -121,7 +121,13 @@ fun DashboardScreen(viewModel: LogiCloViewModel) {
                         Spacer(Modifier.height(16.dp))
                         Text("コーデが組めません", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.height(8.dp))
-                        Text("クローゼットに服を追加してください", style = MaterialTheme.typography.bodyMedium, color = TextGrey)
+                        val hasAnyClothes = uiState.inventory.isNotEmpty()
+                        val message = if (hasAnyClothes) {
+                            "現在の温度・モードに合う服がありません"
+                        } else {
+                            "クローゼットに服を追加してください"
+                        }
+                        Text(message, style = MaterialTheme.typography.bodyMedium, color = TextGrey)
                     }
                 }
             } else {

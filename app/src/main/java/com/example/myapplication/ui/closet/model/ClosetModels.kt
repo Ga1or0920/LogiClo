@@ -64,7 +64,7 @@ data class ClosetEditorUiState(
     val selectedCategory: CategoryOption? = null,
     val selectedColor: ColorOption? = null,
     val isAlwaysWash: Boolean = false,
-    val maxWears: Int = 3,
+    val maxWears: Int = 2,
     val comfortMinCelsius: Double = DEFAULT_COMFORT_RANGE.first,
     val comfortMaxCelsius: Double = DEFAULT_COMFORT_RANGE.second,
     val isComfortRangeCustomized: Boolean = false,
