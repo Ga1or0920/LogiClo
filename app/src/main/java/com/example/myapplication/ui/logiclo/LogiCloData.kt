@@ -33,6 +33,8 @@ data class UiClothingItem(
     val fit: FitType = FitType.REGULAR,
     val comfortMinCelsius: Double? = null,
     val comfortMaxCelsius: Double? = null,
+    val colorGroup: com.example.myapplication.domain.model.ColorGroup = com.example.myapplication.domain.model.ColorGroup.UNKNOWN,
+    val pattern: com.example.myapplication.domain.model.Pattern = com.example.myapplication.domain.model.Pattern.UNKNOWN,
 ) {
     /** 袖丈に応じた表示用アイコンを返す */
     val displayIcon: Int

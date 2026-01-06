@@ -777,7 +777,7 @@ class LogiCloViewModel(
             name = this.name,
             brand = this.brand ?: "",
             type = uiType,
-            categoryKey = this.category.name.lowercase(Locale.ROOT),
+            categoryKey = this.category.backendValue,
             sleeveLength = SleeveLength.values().find { it.name.equals(this.sleeveLength.name, true) } ?: SleeveLength.SHORT,
             thickness = Thickness.values().find { it.name.equals(this.thickness.name, true) } ?: Thickness.NORMAL,
             color = uiColor,
@@ -789,7 +789,9 @@ class LogiCloViewModel(
             cleaningType = uiCleaningType,
             fit = FitType.REGULAR, // Domain doesn't have FitType yet
             comfortMinCelsius = this.comfortMinCelsius,
-            comfortMaxCelsius = this.comfortMaxCelsius
+            comfortMaxCelsius = this.comfortMaxCelsius,
+            colorGroup = this.colorGroup,
+            pattern = this.pattern
         )
     }
 
@@ -816,6 +818,13 @@ class LogiCloViewModel(
         val argb = this.color.value.toLong()
         val hex = String.format("#%08X", argb)
 
+        val resolvedColorGroup = if (this.colorGroup != ColorGroup.UNKNOWN) {
+            this.colorGroup
+        } else {
+            resolveColorGroupFromHex(hex)
+        }
+        val resolvedPattern = this.pattern
+
         return DomainClothingItem(
             id = this.id,
             name = this.name,
@@ -826,8 +835,8 @@ class LogiCloViewModel(
             comfortMinCelsius = this.comfortMinCelsius,
             comfortMaxCelsius = this.comfortMaxCelsius,
             colorHex = hex,
-            colorGroup = ColorGroup.UNKNOWN,
-            pattern = Pattern.UNKNOWN,
+            colorGroup = resolvedColorGroup,
+            pattern = resolvedPattern,
             maxWears = this.maxWears,
             currentWears = this.currentWears,
             isAlwaysWash = this.maxWears == 1,
@@ -835,6 +844,49 @@ class LogiCloViewModel(
             status = domainStatus,
             brand = this.brand
         )
+    }
+
+    private fun resolveColorGroupFromHex(hex: String): ColorGroup {
+        // Minimal heuristic: map representative UI colors to domain color groups.
+        // - Very low saturation => MONOTONE
+        // - Dark blue hues => NAVY_BLUE
+        // - Otherwise: VIVID / EARTH_TONE / PASTEL / OTHER
+        return try {
+            val colorInt = android.graphics.Color.parseColor(hex)
+            val r = (colorInt shr 16 and 0xFF) / 255.0
+            val g = (colorInt shr 8 and 0xFF) / 255.0
+            val b = (colorInt and 0xFF) / 255.0
+
+            val maxc = maxOf(r, g, b)
+            val minc = minOf(r, g, b)
+            val l = (maxc + minc) / 2.0
+            val delta = maxc - minc
+            val s = if (delta == 0.0) 0.0 else delta / (1.0 - kotlin.math.abs(2.0 * l - 1.0))
+
+            var h = 0.0
+            if (delta != 0.0) {
+                h = when (maxc) {
+                    r -> ((g - b) / delta) % 6.0
+                    g -> ((b - r) / delta) + 2.0
+                    else -> ((r - g) / delta) + 4.0
+                }
+                h *= 60.0
+                if (h < 0) h += 360.0
+            }
+
+            if (s < 0.12) return ColorGroup.MONOTONE
+            // Navy-ish (deep blues)
+            if (h in 210.0..260.0 && l < 0.45) return ColorGroup.NAVY_BLUE
+            // Pastel-ish
+            if (l > 0.75 && s in 0.15..0.55) return ColorGroup.PASTEL
+            // Earth tones (browns/khakis/olives)
+            if (h in 20.0..70.0 && s < 0.45) return ColorGroup.EARTH_TONE
+            // Default colorful
+            if (s >= 0.55) return ColorGroup.VIVID
+            ColorGroup.OTHER
+        } catch (e: Exception) {
+            ColorGroup.UNKNOWN
+        }
     }
 
     companion object {
