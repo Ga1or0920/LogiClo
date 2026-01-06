@@ -15,6 +15,7 @@ enum class ClothingCategory(val backendValue: String) {
     DENIM("denim"),
     SLACKS("slacks"),
     CHINO("chino"),
+    SWEATPANTS("sweatpants"),
     OUTER_LIGHT("outer_light"),
     DOWN("down"),
     COAT("coat"),

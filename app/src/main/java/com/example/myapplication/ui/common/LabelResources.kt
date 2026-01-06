@@ -20,6 +20,7 @@ fun ClothingCategory.labelResId(): Int = when (this) {
     ClothingCategory.DENIM -> R.string.clothing_category_denim
     ClothingCategory.SLACKS -> R.string.clothing_category_slacks
     ClothingCategory.CHINO -> R.string.clothing_category_chino
+    ClothingCategory.SWEATPANTS -> R.string.clothing_category_sweatpants
     ClothingCategory.OUTER_LIGHT -> R.string.clothing_category_outer_light
     ClothingCategory.DOWN -> R.string.clothing_category_down
     ClothingCategory.COAT -> R.string.clothing_category_coat

@@ -3,12 +3,23 @@ package com.example.myapplication.domain.usecase
 import com.example.myapplication.domain.model.*
 import com.example.myapplication.ui.logiclo.AppMode
 import com.example.myapplication.ui.logiclo.EnvMode
-import kotlin.math.abs
 
 /**
  * TPO対応型ハイブリッドアルゴリズムによる服の選定ロジック
  */
 class OutfitSelector {
+
+    /**
+     * Formality enumをTPOスコア(0-100)に変換
+     */
+    private fun Formality?.toTpoScore(): Int = when(this) {
+        Formality.FORMAL -> 90
+        Formality.SEMI_FORMAL -> 70
+        Formality.SOMEWHAT_CASUAL -> 50
+        Formality.CASUAL -> 30
+        Formality.STANDARD -> 40
+        else -> 50  // UNKNOWN or null
+    }
 
     data class SuggestionResult(
         val top: ClothingItem?,
@@ -50,9 +61,10 @@ class OutfitSelector {
         val cleanItems = allClothing.filter { it.status == LaundryStatus.CLOSET }
 
         val tpoFilteredItems = cleanItems.filter { item ->
+            val score = item.formality.toTpoScore()
             when (tpoMode) {
-                AppMode.CASUAL -> item.tpoScore <= 60  // 休日: Relax, Casual, Smart Casual
-                AppMode.OFFICE -> item.tpoScore >= 50  // 仕事: Smart Casual, Formal
+                AppMode.CASUAL -> score <= 60  // 休日: Relax, Casual, Smart Casual
+                AppMode.OFFICE -> score >= 50  // 仕事: Smart Casual, Formal
             }
         }
 
@@ -93,19 +105,19 @@ class OutfitSelector {
         // =====================================================================
         
         fun calculateTempDiff(item: ClothingItem, targetTemp: Double): Double {
-            val min = item.comfortMinCelsius ?: return 0.0
-            val max = item.comfortMaxCelsius ?: return 0.0
-            // 範囲内なら0、範囲外なら差分
+            val min = item.comfortMinCelsius ?: return Double.MAX_VALUE // 温度範囲未設定は最低優先度
+            val max = item.comfortMaxCelsius ?: return Double.MAX_VALUE // 温度範囲未設定は最低優先度
+            // 範囲内なら0、範囲外なら絶対差分
             return when {
-                targetTemp < min -> targetTemp - min // 寒すぎる (負の値)
-                targetTemp > max -> targetTemp - max // 暑すぎる (正の値)
-                else -> 0.0
+                targetTemp < min -> min - targetTemp // 寒すぎる (絶対値)
+                targetTemp > max -> targetTemp - max // 暑すぎる (絶対値)
+                else -> 0.0 // 範囲内 - 最高優先度
             }
         }
 
-        // 温度差の絶対値が小さい順にソートして上位候補を取得
-        val topCandidates = tops.sortedBy { abs(calculateTempDiff(it, targetTempInner)) }.take(5)
-        val bottomCandidates = bottoms.sortedBy { abs(calculateTempDiff(it, targetTempInner)) }.take(5)
+        // 温度差が小さい順にソートして上位候補を取得
+        val topCandidates = tops.sortedBy { calculateTempDiff(it, targetTempInner) }.take(5)
+        val bottomCandidates = bottoms.sortedBy { calculateTempDiff(it, targetTempInner) }.take(5)
 
         // =====================================================================
         // Step 4: アウターの選定 (Outer Selection)
@@ -120,7 +132,7 @@ class OutfitSelector {
         val selectedOuter = if (isShortTripWarm) {
             null
         } else {
-            outers.sortedBy { abs(calculateTempDiff(it, targetTempOuter)) }.firstOrNull()
+            outers.sortedBy { calculateTempDiff(it, targetTempOuter) }.firstOrNull()
         }
 
         // =====================================================================
@@ -185,9 +197,9 @@ class OutfitSelector {
      */
     private fun calculateFormality(items: List<ClothingItem>): String {
         if (items.isEmpty()) return "---"
-        
-        val avgScore = items.map { it.tpoScore }.average()
-        
+
+        val avgScore = items.map { it.formality.toTpoScore() }.average()
+
         return when {
             avgScore >= 80 -> "フォーマル (仕事・会食)"
             avgScore >= 60 -> "オフィスカジュアル (通勤・デート)"

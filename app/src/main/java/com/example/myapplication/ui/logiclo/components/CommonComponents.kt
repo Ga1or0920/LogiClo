@@ -292,14 +292,15 @@ fun ClothingItemCard(
                                 Tag(text = "毎回洗う", color = MaterialTheme.colorScheme.secondary)
                             }
                             // Temperature difference indicator
-                            if (tempDiff != null) {
+                            if (tempDiff != null && tempDiff != Double.MAX_VALUE) {
                                 val (icon, text, color) = when {
                                     tempDiff > 10 -> Triple("🔥🔥", "暑すぎ ${tempDiff.toInt()}℃", MaterialTheme.colorScheme.error)
                                     tempDiff > 5 -> Triple("🔥", "暑い ${tempDiff.toInt()}℃", Color(0xFFFF6B00))
                                     tempDiff > 0 -> Triple("🌡️", "やや暑 ${tempDiff.toInt()}℃", Color(0xFFFF9500))
                                     tempDiff < -10 -> Triple("❄️❄️", "寒すぎ ${(-tempDiff).toInt()}℃", Color(0xFF2196F3))
                                     tempDiff < -5 -> Triple("❄️", "寒い ${(-tempDiff).toInt()}℃", Color(0xFF42A5F5))
-                                    else -> Triple("❄", "やや寒 ${(-tempDiff).toInt()}℃", Color(0xFF64B5F6))
+                                    tempDiff < 0 -> Triple("❄", "やや寒 ${(-tempDiff).toInt()}℃", Color(0xFF64B5F6))
+                                    else -> Triple("✅", "適温", Color(0xFF4CAF50))
                                 }
                                 Tag(text = "$icon $text", color = color)
                             }

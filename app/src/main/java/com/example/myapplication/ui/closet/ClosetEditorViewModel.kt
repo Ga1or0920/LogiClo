@@ -604,6 +604,16 @@ internal fun closetCategoryOptions(): List<CategoryOption> = listOf(
         defaultMaxWears = 6,
         defaultAlwaysWash = false
     ),
+    CategoryOption(
+        category = ClothingCategory.SWEATPANTS,
+        labelResId = R.string.clothing_category_sweatpants,
+        type = ClothingType.BOTTOM,
+        defaultSleeve = SleeveLength.NONE,
+        defaultThickness = Thickness.THICK,
+        defaultCleaning = CleaningType.HOME,
+        defaultMaxWears = 5,
+        defaultAlwaysWash = false
+    ),
 
     // Outers
     CategoryOption(

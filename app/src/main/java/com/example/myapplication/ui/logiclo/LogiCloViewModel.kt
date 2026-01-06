@@ -406,18 +406,19 @@ class LogiCloViewModel(
     }
 
     /**
-     * Calculate temperature difference from item's comfort range.
-     * Returns null if within range, positive if too hot, negative if too cold.
+     * Calculate temperature difference from item's comfort range for sorting.
+     * Returns 0.0 if within range, absolute difference if outside range,
+     * or Double.MAX_VALUE if comfort range is not defined.
      */
-    private fun calculateTempDiff(item: UiClothingItem, currentTemp: Double): Double? {
+    private fun calculateTempDiff(item: UiClothingItem, currentTemp: Double): Double {
         val minTemp = item.comfortMinCelsius
         val maxTemp = item.comfortMaxCelsius
 
         return when {
-            minTemp == null || maxTemp == null -> null // No comfort range defined
-            currentTemp < minTemp -> currentTemp - minTemp // Negative = too cold
-            currentTemp > maxTemp -> currentTemp - maxTemp // Positive = too hot
-            else -> null // Within range
+            minTemp == null || maxTemp == null -> Double.MAX_VALUE // No comfort range defined - lowest priority
+            currentTemp < minTemp -> minTemp - currentTemp // Too cold (absolute difference)
+            currentTemp > maxTemp -> currentTemp - maxTemp // Too hot (absolute difference)
+            else -> 0.0 // Within range - highest priority
         }
     }
 
@@ -475,14 +476,8 @@ class LogiCloViewModel(
         }
 
         // Sort by temperature difference (closest to comfort range first)
-        tops.sortBy { item ->
-            val diff = calculateTempDiff(item, effectiveTemp)
-            if (diff == null) 0.0 else kotlin.math.abs(diff)
-        }
-        bottoms.sortBy { item ->
-            val diff = calculateTempDiff(item, effectiveTemp)
-            if (diff == null) 0.0 else kotlin.math.abs(diff)
-        }
+        tops.sortBy { item -> calculateTempDiff(item, effectiveTemp) }
+        bottoms.sortBy { item -> calculateTempDiff(item, effectiveTemp) }
 
         // Apply non-tacky combination filter
         val precipitationProbability = state.weather?.precipitationProbability ?: 0
@@ -517,10 +512,7 @@ class LogiCloViewModel(
         )
 
         // Sort outers by temperature difference
-        outers.sortBy { item ->
-            val diff = calculateTempDiff(item, outdoorTemp)
-            if (diff == null) 0.0 else kotlin.math.abs(diff)
-        }
+        outers.sortBy { item -> calculateTempDiff(item, outdoorTemp) }
 
         val suggestedOuter = when {
             state.selectedMode == AppMode.CASUAL && state.selectedTimeId == "spot" && outdoorTemp > 15.0 -> null
@@ -553,7 +545,7 @@ class LogiCloViewModel(
     }
 
     /**
-     * 指定したタイプの服を別の候補に変更する
+     * コーディネート全体を変更する（3部位のうち1つ以上を変更）
      */
     fun changeOutfitItem(type: ItemType) {
         val state = _uiState.value
@@ -575,49 +567,66 @@ class LogiCloViewModel(
             timeId = state.selectedTimeId
         )
 
-        when (type) {
-            ItemType.OUTER -> {
-                val currentOuter = state.suggestedOuter
-                val outers = cleanItems.filter { it.type == ItemType.OUTER && it.id != currentOuter?.id }.toMutableList()
-                outers.sortBy { item ->
-                    val diff = calculateTempDiff(item, outdoorTemp)
-                    if (diff == null) 0.0 else kotlin.math.abs(diff)
-                }
-                if (outers.isNotEmpty()) {
-                    val candidates = outers.take(3)
-                    val newOuter = candidates.random()
-                    val tempDiff = calculateTempDiff(newOuter, outdoorTemp)
-                    _uiState.update { it.copy(suggestedOuter = newOuter, suggestedOuterTempDiff = tempDiff) }
-                }
-            }
-            ItemType.TOP -> {
-                val currentTop = state.suggestedTop
-                val tops = cleanItems.filter { it.type == ItemType.TOP && it.id != currentTop?.id }.toMutableList()
-                tops.sortBy { item ->
-                    val diff = calculateTempDiff(item, effectiveTemp)
-                    if (diff == null) 0.0 else kotlin.math.abs(diff)
-                }
-                if (tops.isNotEmpty()) {
-                    val candidates = tops.take(3)
-                    val newTop = candidates.random()
-                    val tempDiff = calculateTempDiff(newTop, effectiveTemp)
-                    _uiState.update { it.copy(suggestedTop = newTop, suggestedTopTempDiff = tempDiff) }
-                }
-            }
-            ItemType.BOTTOM -> {
-                val currentBottom = state.suggestedBottom
-                val bottoms = cleanItems.filter { it.type == ItemType.BOTTOM && it.id != currentBottom?.id }.toMutableList()
-                bottoms.sortBy { item ->
-                    val diff = calculateTempDiff(item, effectiveTemp)
-                    if (diff == null) 0.0 else kotlin.math.abs(diff)
-                }
-                if (bottoms.isNotEmpty()) {
-                    val candidates = bottoms.take(3)
-                    val newBottom = candidates.random()
-                    val tempDiff = calculateTempDiff(newBottom, effectiveTemp)
-                    _uiState.update { it.copy(suggestedBottom = newBottom, suggestedBottomTempDiff = tempDiff) }
+        val precipitationProbability = state.weather?.precipitationProbability ?: 0
+
+        // 現在の提案から除外するアイテムのIDリスト
+        val excludeIds = setOf(
+            state.suggestedTop?.id,
+            state.suggestedBottom?.id,
+            state.suggestedOuter?.id
+        ).filterNotNull().toSet()
+
+        // 候補をソート
+        val tops = cleanItems.filter { it.type == ItemType.TOP && it.id !in excludeIds }.toMutableList()
+        val bottoms = cleanItems.filter { it.type == ItemType.BOTTOM && it.id !in excludeIds }.toMutableList()
+        val outers = cleanItems.filter { it.type == ItemType.OUTER && it.id !in excludeIds }.toMutableList()
+
+        tops.sortBy { item -> calculateTempDiff(item, effectiveTemp) }
+        bottoms.sortBy { item -> calculateTempDiff(item, effectiveTemp) }
+        outers.sortBy { item -> calculateTempDiff(item, outdoorTemp) }
+
+        // 新しい有効な組み合わせを探す
+        var newTop: UiClothingItem? = null
+        var newBottom: UiClothingItem? = null
+
+        outerLoop@ for (top in tops) {
+            for (bottom in bottoms) {
+                if (isValidCombination(top, bottom, precipitationProbability)) {
+                    newTop = top
+                    newBottom = bottom
+                    break@outerLoop
                 }
             }
+        }
+
+        // フォールバック: 有効な組み合わせが見つからない場合
+        if (newTop == null && tops.isNotEmpty()) {
+            newTop = tops.first()
+        }
+        if (newBottom == null && bottoms.isNotEmpty()) {
+            newBottom = bottoms.first()
+        }
+
+        val newOuter = when {
+            state.selectedMode == AppMode.CASUAL && state.selectedTimeId == "spot" && outdoorTemp > 15.0 -> null
+            outers.isNotEmpty() -> outers.first()
+            else -> null
+        }
+
+        // 温度差を計算
+        val topTempDiff = newTop?.let { calculateTempDiff(it, effectiveTemp) }
+        val bottomTempDiff = newBottom?.let { calculateTempDiff(it, effectiveTemp) }
+        val outerTempDiff = newOuter?.let { calculateTempDiff(it, outdoorTemp) }
+
+        _uiState.update {
+            it.copy(
+                suggestedTop = newTop,
+                suggestedBottom = newBottom,
+                suggestedOuter = newOuter,
+                suggestedTopTempDiff = topTempDiff,
+                suggestedBottomTempDiff = bottomTempDiff,
+                suggestedOuterTempDiff = outerTempDiff
+            )
         }
     }
 

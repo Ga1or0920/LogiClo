@@ -142,7 +142,8 @@ private fun clothingPathData(category: ClothingCategory): ClothingPathData = whe
 
     ClothingCategory.DENIM,
     ClothingCategory.SLACKS,
-    ClothingCategory.CHINO -> ClothingPathData(
+    ClothingCategory.CHINO,
+    ClothingCategory.SWEATPANTS -> ClothingPathData(
         fillAndStroke = listOf(buildBottomsPath()),
         strokeOnly = listOf(buildBottomsCenterSeamPath())
     )
