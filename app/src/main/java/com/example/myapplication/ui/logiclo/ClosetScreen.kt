@@ -395,13 +395,15 @@ private fun AddItemSheet(
     val categories = remember { listOf(
         mapOf("key" to "t_shirt", "icon" to com.example.myapplication.R.drawable.ic_clothing_top, "label" to "Tシャツ"),
         mapOf("key" to "polo", "icon" to com.example.myapplication.R.drawable.ic_clothing_top, "label" to "ポロシャツ"),
-        mapOf("key" to "shirt", "icon" to com.example.myapplication.R.drawable.ic_clothing_top, "label" to "シャツ"),
+        mapOf("key" to "dress_shirt", "icon" to com.example.myapplication.R.drawable.ic_clothing_top, "label" to "シャツ"),
         mapOf("key" to "knit", "icon" to com.example.myapplication.R.drawable.ic_clothing_top, "label" to "ニット"),
-        mapOf("key" to "hoodie", "icon" to com.example.myapplication.R.drawable.ic_clothing_top, "label" to "パーカー"),
+        mapOf("key" to "sweatshirt", "icon" to com.example.myapplication.R.drawable.ic_clothing_top, "label" to "スウェット"),
         mapOf("key" to "denim", "icon" to com.example.myapplication.R.drawable.ic_clothing_bottom, "label" to "デニム"),
         mapOf("key" to "slacks", "icon" to com.example.myapplication.R.drawable.ic_clothing_bottom, "label" to "スラックス"),
         mapOf("key" to "chino", "icon" to com.example.myapplication.R.drawable.ic_clothing_bottom, "label" to "チノパン"),
         mapOf("key" to "jacket", "icon" to com.example.myapplication.R.drawable.ic_clothing_outer, "label" to "ジャケット"),
+        mapOf("key" to "windbreaker", "icon" to com.example.myapplication.R.drawable.ic_clothing_outer, "label" to "ウィンドブレーカー"),
+        mapOf("key" to "down", "icon" to com.example.myapplication.R.drawable.ic_clothing_outer, "label" to "ダウン"),
         mapOf("key" to "coat", "icon" to com.example.myapplication.R.drawable.ic_clothing_outer, "label" to "コート"),
     )}
     // 色と名前のペア

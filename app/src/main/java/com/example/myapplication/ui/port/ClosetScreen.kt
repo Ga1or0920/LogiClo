@@ -142,11 +142,14 @@ fun AddItemSheet(viewModel: AppViewModel, onDismiss: () -> Unit) {
         mapOf("key" to "polo", "icon" to Icons.Default.Checkroom, "label" to "ポロシャツ"),
         mapOf("key" to "shirt", "icon" to Icons.Default.Checkroom, "label" to "シャツ"),
         mapOf("key" to "knit", "icon" to Icons.Default.Checkroom, "label" to "ニット"),
+        mapOf("key" to "sweatshirt", "icon" to Icons.Default.Checkroom, "label" to "スウェット"),
         mapOf("key" to "hoodie", "icon" to Icons.Default.Checkroom, "label" to "パーカー"),
         mapOf("key" to "denim", "icon" to Icons.Default.AccessibilityNew, "label" to "デニム"),
         mapOf("key" to "slacks", "icon" to Icons.Default.AccessibilityNew, "label" to "スラックス"),
         mapOf("key" to "chino", "icon" to Icons.Default.AccessibilityNew, "label" to "チノパン"),
         mapOf("key" to "jacket", "icon" to Icons.Default.AllOut, "label" to "ジャケット"),
+        mapOf("key" to "windbreaker", "icon" to Icons.Default.AllOut, "label" to "ウィンドブレーカー"),
+        mapOf("key" to "down", "icon" to Icons.Default.AllOut, "label" to "ダウン"),
         mapOf("key" to "coat", "icon" to Icons.Default.AllOut, "label" to "コート")
     )
 

@@ -15,17 +15,22 @@ import com.example.myapplication.domain.model.LaundryStatus
 import com.example.myapplication.domain.model.ColorGroup
 import com.example.myapplication.domain.model.LocationSearchResult
 import com.example.myapplication.domain.model.Pattern
+import com.example.myapplication.domain.model.Thickness as DomainThickness
+import com.example.myapplication.domain.model.SleeveLength as DomainSleeveLength
 import com.example.myapplication.domain.model.WeatherLocationOverride
 import com.example.myapplication.domain.model.WeatherSnapshot
 import com.example.myapplication.domain.model.CasualForecastDay
 import com.example.myapplication.domain.model.CasualForecastSegment
 import com.example.myapplication.domain.model.ClothingItem as DomainClothingItem
+import com.example.myapplication.domain.usecase.ComfortRangeDefaults
+import com.example.myapplication.domain.usecase.FormalScoreCalculator
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.*
+import kotlin.math.abs
 import kotlin.random.Random
 
 import com.example.myapplication.ui.dashboard.model.ComebackDialogState
@@ -48,6 +53,8 @@ class LogiCloViewModel(
     private val wearFeedbackRepository: com.example.myapplication.data.repository.WearFeedbackRepository? = null,
     private val clockDebugController: com.example.myapplication.util.time.DebugClockController? = null
 ) : ViewModel() {
+
+    private val formalScoreCalculator = FormalScoreCalculator()
 
     // --- UI State ---
     private val _uiState = MutableStateFlow(LogiCloUiState())
@@ -479,18 +486,70 @@ class LogiCloViewModel(
         tops.sortBy { item -> calculateTempDiff(item, effectiveTemp) }
         bottoms.sortBy { item -> calculateTempDiff(item, effectiveTemp) }
 
+        // --- フォーマル度でソート/フィルタリング ---
+        val formalScores: Map<String, Int> = (tops + bottoms + outers)
+            .associate { it.id to formalScoreCalculator.calculate(it.toDomainModel()) }
+
+        when (state.selectedMode) {
+            AppMode.OFFICE -> {
+                val minScore = 6
+                tops.removeAll { (formalScores[it.id] ?: 0) < minScore }
+                bottoms.removeAll { (formalScores[it.id] ?: 0) < minScore }
+                tops.sortWith(
+                    compareByDescending<UiClothingItem> { formalScores[it.id] ?: 0 }
+                        .thenBy { calculateTempDiff(it, effectiveTemp) }
+                )
+                bottoms.sortWith(
+                    compareByDescending<UiClothingItem> { formalScores[it.id] ?: 0 }
+                        .thenBy { calculateTempDiff(it, effectiveTemp) }
+                )
+            }
+            AppMode.CASUAL -> {
+                tops.sortWith(
+                    compareBy<UiClothingItem> { formalScores[it.id] ?: 0 }
+                        .thenBy { calculateTempDiff(it, effectiveTemp) }
+                )
+                bottoms.sortWith(
+                    compareBy<UiClothingItem> { formalScores[it.id] ?: 0 }
+                        .thenBy { calculateTempDiff(it, effectiveTemp) }
+                )
+            }
+        }
+
         // Apply non-tacky combination filter
         val precipitationProbability = state.weather?.precipitationProbability ?: 0
         var suggestedTop: UiClothingItem? = null
         var suggestedBottom: UiClothingItem? = null
 
-        // Find the first valid top-bottom combination
-        outerLoop@ for (top in tops) {
-            for (bottom in bottoms) {
-                if (isValidCombination(top, bottom, precipitationProbability)) {
-                    suggestedTop = top
-                    suggestedBottom = bottom
-                    break@outerLoop
+        // Prefer a formal+temperature best pair if valid
+        val preferredTop = pickByFormalAndTemperature(
+            candidates = tops,
+            temperatureCelsius = effectiveTemp,
+            mode = state.selectedMode,
+            formalScores = formalScores
+        )
+        val preferredBottom = pickByFormalAndTemperature(
+            candidates = bottoms,
+            temperatureCelsius = effectiveTemp,
+            mode = state.selectedMode,
+            formalScores = formalScores
+        )
+        if (
+            preferredTop != null &&
+            preferredBottom != null &&
+            isValidCombination(preferredTop, preferredBottom, precipitationProbability)
+        ) {
+            suggestedTop = preferredTop
+            suggestedBottom = preferredBottom
+        } else {
+            // Find the first valid top-bottom combination
+            outerLoop@ for (top in tops) {
+                for (bottom in bottoms) {
+                    if (isValidCombination(top, bottom, precipitationProbability)) {
+                        suggestedTop = top
+                        suggestedBottom = bottom
+                        break@outerLoop
+                    }
                 }
             }
         }
@@ -514,10 +573,26 @@ class LogiCloViewModel(
         // Sort outers by temperature difference
         outers.sortBy { item -> calculateTempDiff(item, outdoorTemp) }
 
+        // アウターの判定
+        val needsOuter = outdoorTemp < 20.0
         val suggestedOuter = when {
             state.selectedMode == AppMode.CASUAL && state.selectedTimeId == "spot" && outdoorTemp > 15.0 -> null
-            outers.isNotEmpty() -> outers.first()
-            else -> null
+            outdoorTemp > 25.0 -> null
+            !needsOuter -> null
+            outers.isEmpty() -> null
+            else -> {
+                val outerCandidates = if (outdoorTemp < 10.0) {
+                    outers.filter { it.thickness == Thickness.THICK }.ifEmpty { outers }
+                } else {
+                    outers
+                }
+                pickByFormalAndTemperature(
+                    candidates = outerCandidates,
+                    temperatureCelsius = outdoorTemp,
+                    mode = state.selectedMode,
+                    formalScores = formalScores
+                ) ?: outerCandidates.first()
+            }
         }
 
         // Calculate temperature differences for suggested items
@@ -535,6 +610,78 @@ class LogiCloViewModel(
                 suggestedOuterTempDiff = outerTempDiff
             )
         }
+    }
+
+
+    private fun pickByFormalAndTemperature(
+        candidates: List<UiClothingItem>,
+        temperatureCelsius: Double,
+        mode: AppMode,
+        formalScores: Map<String, Int>
+    ): UiClothingItem? {
+        if (candidates.isEmpty()) return null
+
+        data class CandidateScore(
+            val item: UiClothingItem,
+            val formal: Int,
+            val tempDiff: Double
+        )
+
+        val scored = candidates.map { item ->
+            val (minC, maxC) = resolveComfortRange(item)
+            val center = (minC + maxC) / 2.0
+            CandidateScore(
+                item = item,
+                formal = formalScores[item.id] ?: 0,
+                tempDiff = abs(temperatureCelsius - center)
+            )
+        }
+
+        val targetFormal = when (mode) {
+            AppMode.OFFICE -> scored.maxOf { it.formal }
+            AppMode.CASUAL -> scored.minOf { it.formal }
+        }
+
+        val formalFiltered = scored.filter { it.formal == targetFormal }
+        val bestTempDiff = formalFiltered.minOf { it.tempDiff }
+        val epsilon = 1e-9
+        val bestItems = formalFiltered
+            .filter { abs(it.tempDiff - bestTempDiff) <= epsilon }
+            .map { it.item }
+
+        return bestItems.randomOrNull(Random) ?: formalFiltered.firstOrNull()?.item ?: candidates.randomOrNull(Random)
+    }
+
+    private fun isSuitableForTemperature(item: UiClothingItem, temperatureCelsius: Double): Boolean {
+        val (minC, maxC) = resolveComfortRange(item)
+        val tolerance = 3.0
+        return temperatureCelsius >= (minC - tolerance) && temperatureCelsius <= (maxC + tolerance)
+    }
+
+    private fun resolveComfortRange(item: UiClothingItem): Pair<Double, Double> {
+        val domainType = when (item.type) {
+            ItemType.TOP -> ClothingType.TOP
+            ItemType.BOTTOM -> ClothingType.BOTTOM
+            ItemType.OUTER -> ClothingType.OUTER
+        }
+        val domainSleeve = when (item.sleeveLength) {
+            SleeveLength.SHORT -> DomainSleeveLength.SHORT
+            SleeveLength.LONG -> DomainSleeveLength.LONG
+            SleeveLength.NONE -> DomainSleeveLength.NONE
+        }
+        val domainThickness = when (item.thickness) {
+            Thickness.THIN -> DomainThickness.THIN
+            Thickness.NORMAL -> DomainThickness.NORMAL
+            Thickness.THICK -> DomainThickness.THICK
+        }
+        val (defaultMin, defaultMax) = ComfortRangeDefaults.forAttributes(
+            type = domainType,
+            thickness = domainThickness,
+            sleeveLength = domainSleeve
+        )
+        val rawMin = item.comfortMinCelsius ?: defaultMin
+        val rawMax = item.comfortMaxCelsius ?: defaultMax
+        return if (rawMin <= rawMax) rawMin to rawMax else rawMax to rawMin
     }
 
     fun markAsActuallyDirty(item: UiClothingItem) {
@@ -657,17 +804,20 @@ class LogiCloViewModel(
         )
         lastWornBasisTemp = basisTemp
 
-        _uiState.value.suggestedTop?.let { top ->
-             viewModelScope.launch {
-                 val newWears = top.currentWears + damage
-                 val isDirty = newWears >= top.maxWears
-                 val status = if (isDirty) LaundryStatus.DIRTY else LaundryStatus.CLOSET
-                 val currentWears = if (isDirty) 0 else newWears
-
-                 val domainItem = top.toDomainModel().copy(currentWears = currentWears, status = status)
-                 closetRepository.upsert(domainItem)
-             }
+        fun applyWearDamage(item: UiClothingItem) {
+            viewModelScope.launch {
+                val newWears = item.currentWears + damage
+                val isDirty = newWears >= item.maxWears
+                val status = if (isDirty) LaundryStatus.DIRTY else LaundryStatus.CLOSET
+                val currentWears = if (isDirty) 0 else newWears
+                val domainItem = item.toDomainModel().copy(currentWears = currentWears, status = status)
+                closetRepository.upsert(domainItem)
+            }
         }
+
+        _uiState.value.suggestedTop?.let(::applyWearDamage)
+        _uiState.value.suggestedBottom?.let(::applyWearDamage)
+        _uiState.value.suggestedOuter?.let(::applyWearDamage)
 
         // フィードバック用に着用記録（通知は21時に送信される）
         viewModelScope.launch {
@@ -889,44 +1039,43 @@ class LogiCloViewModel(
     
     fun getSmartDefaults(categoryKey: String): Map<String, Any> {
         return when (categoryKey) {
-            "t_shirt" -> mapOf("max" to 1, "always" to true, "type" to ItemType.TOP, "sleeve" to SleeveLength.SHORT, "thickness" to Thickness.NORMAL)
-            "polo" -> mapOf("max" to 1, "always" to true, "type" to ItemType.TOP, "sleeve" to SleeveLength.SHORT, "thickness" to Thickness.NORMAL)
-            "shirt" -> mapOf("max" to 2, "always" to false, "type" to ItemType.TOP, "sleeve" to SleeveLength.LONG, "thickness" to Thickness.THIN)
-            "knit" -> mapOf("max" to 5, "always" to false, "type" to ItemType.TOP, "sleeve" to SleeveLength.LONG, "thickness" to Thickness.THICK)
-            "hoodie" -> mapOf("max" to 3, "always" to false, "type" to ItemType.TOP, "sleeve" to SleeveLength.LONG, "thickness" to Thickness.THICK)
-            "denim" -> mapOf("max" to 10, "always" to false, "type" to ItemType.BOTTOM, "sleeve" to SleeveLength.LONG, "thickness" to Thickness.THICK)
-            "slacks" -> mapOf("max" to 3, "always" to false, "type" to ItemType.BOTTOM, "sleeve" to SleeveLength.LONG, "thickness" to Thickness.NORMAL)
-            "chino" -> mapOf("max" to 5, "always" to false, "type" to ItemType.BOTTOM, "sleeve" to SleeveLength.LONG, "thickness" to Thickness.NORMAL)
-            "jacket" -> mapOf("max" to 5, "always" to false, "type" to ItemType.OUTER, "sleeve" to SleeveLength.LONG, "thickness" to Thickness.NORMAL)
-            "coat" -> mapOf("max" to 10, "always" to false, "type" to ItemType.OUTER, "sleeve" to SleeveLength.LONG, "thickness" to Thickness.THICK)
-            else -> mapOf("max" to 1, "always" to true, "type" to ItemType.TOP, "sleeve" to SleeveLength.SHORT, "thickness" to Thickness.NORMAL)
+            "t_shirt" -> mapOf("max" to 1, "always" to true, "type" to ItemType.TOP, "sleeve" to SleeveLength.SHORT, "thickness" to Thickness.THIN)
+            "polo" -> mapOf("max" to 2, "always" to false, "type" to ItemType.TOP, "sleeve" to SleeveLength.SHORT, "thickness" to Thickness.THIN)
+            // Legacy keys (UI側の表記揺れ対策)
+            "shirt", "dress_shirt" -> mapOf("max" to 1, "always" to true, "type" to ItemType.TOP, "sleeve" to SleeveLength.LONG, "thickness" to Thickness.THIN)
+            "hoodie", "sweatshirt" -> mapOf("max" to 3, "always" to false, "type" to ItemType.TOP, "sleeve" to SleeveLength.LONG, "thickness" to Thickness.THICK)
+            "knit" -> mapOf("max" to 5, "always" to false, "type" to ItemType.TOP, "sleeve" to SleeveLength.LONG, "thickness" to Thickness.NORMAL)
+            "denim" -> mapOf("max" to 10, "always" to false, "type" to ItemType.BOTTOM, "sleeve" to SleeveLength.NONE, "thickness" to Thickness.THICK)
+            "slacks" -> mapOf("max" to 4, "always" to false, "type" to ItemType.BOTTOM, "sleeve" to SleeveLength.NONE, "thickness" to Thickness.NORMAL)
+            "chino" -> mapOf("max" to 6, "always" to false, "type" to ItemType.BOTTOM, "sleeve" to SleeveLength.NONE, "thickness" to Thickness.NORMAL)
+            "jacket" -> mapOf("max" to 5, "always" to false, "type" to ItemType.OUTER, "sleeve" to SleeveLength.LONG, "thickness" to Thickness.THICK)
+            "windbreaker" -> mapOf("max" to 4, "always" to false, "type" to ItemType.OUTER, "sleeve" to SleeveLength.LONG, "thickness" to Thickness.THIN)
+            "down" -> mapOf("max" to 6, "always" to false, "type" to ItemType.OUTER, "sleeve" to SleeveLength.LONG, "thickness" to Thickness.THICK)
+            "coat" -> mapOf("max" to 6, "always" to false, "type" to ItemType.OUTER, "sleeve" to SleeveLength.LONG, "thickness" to Thickness.THICK)
+            else -> mapOf("max" to 3, "always" to false, "type" to ItemType.TOP, "sleeve" to SleeveLength.SHORT, "thickness" to Thickness.NORMAL)
         }
     }
 
-    // --- Mappers ---
-    
     private fun DomainClothingItem.toUiModel(): UiClothingItem {
         val uiType = when (this.type) {
-            ClothingType.TOP, ClothingType.INNER -> ItemType.TOP
+            ClothingType.TOP -> ItemType.TOP
             ClothingType.BOTTOM -> ItemType.BOTTOM
             ClothingType.OUTER -> ItemType.OUTER
+            ClothingType.INNER -> ItemType.TOP
             ClothingType.UNKNOWN -> ItemType.TOP
         }
-        
-        val uiIcon = when (this.type) {
-            ClothingType.TOP -> R.drawable.ic_clothing_top
-            ClothingType.INNER -> R.drawable.ic_clothing_inner
-            ClothingType.OUTER -> R.drawable.ic_clothing_outer
-            ClothingType.BOTTOM -> R.drawable.ic_clothing_bottom
-            else -> R.drawable.ic_clothing_top
+
+        val uiIcon = when (uiType) {
+            ItemType.TOP -> R.drawable.ic_clothing_top
+            ItemType.BOTTOM -> R.drawable.ic_clothing_bottom
+            ItemType.OUTER -> R.drawable.ic_clothing_outer
         }
-        
+
         val uiCleaningType = when (this.cleaningType) {
-            com.example.myapplication.domain.model.CleaningType.HOME -> CleaningType.HOME
             com.example.myapplication.domain.model.CleaningType.DRY -> CleaningType.DRY
             else -> CleaningType.HOME
         }
-        
+
         // Parse hex color safely
         val uiColor = try {
             Color(android.graphics.Color.parseColor(this.colorHex))
@@ -1134,19 +1283,19 @@ data class LogiCloUiState(
 
     // Feedback Dialog State
     val showFeedbackDialog: Boolean = false,
-    val feedbackBasisTemp: Double = 20.0
+    val feedbackBasisTemp: Double = 0.0,
 )
 
-// --- Location Search State ---
+enum class ThemeMode {
+    SYSTEM,
+    LIGHT,
+    DARK
+}
+
 data class LocationSearchState(
     val isVisible: Boolean = false,
     val query: String = "",
     val isLoading: Boolean = false,
     val results: List<LocationSearchResult> = emptyList(),
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
 )
-
-// Represents system theme options
-enum class ThemeMode {
-    LIGHT, DARK, SYSTEM
-}

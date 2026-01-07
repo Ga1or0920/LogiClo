@@ -147,20 +147,23 @@ class AppViewModel : ViewModel() {
         val damage = if (isHotDay) 2 else 1
         val logs = mutableListOf<String>()
 
-        suggestedTop.value?.let { top ->
-            val index = inventory.indexOfFirst { it.id == top.id }
-            if (index != -1) {
-                var currentWears = top.currentWears + damage
-                var isDirty = top.isDirty
-                if (currentWears >= top.maxWears) {
-                    isDirty = true
-                    currentWears = 0
-                    logs.add("${top.name}: 洗濯カゴへ")
-                }
-                val newItem = top.copy(currentWears = currentWears, isDirty = isDirty)
-                inventory[index] = newItem
+        fun applyWearDamage(item: ClothingItem) {
+            val index = inventory.indexOfFirst { it.id == item.id }
+            if (index == -1) return
+
+            var currentWears = item.currentWears + damage
+            var isDirty = item.isDirty
+            if (currentWears >= item.maxWears) {
+                isDirty = true
+                currentWears = 0
+                logs.add("${item.name}: 洗濯カゴへ")
             }
+            inventory[index] = item.copy(currentWears = currentWears, isDirty = isDirty)
         }
+
+        suggestedTop.value?.let(::applyWearDamage)
+        suggestedBottom.value?.let(::applyWearDamage)
+        suggestedOuter.value?.let(::applyWearDamage)
 
         refreshSuggestion()
 
@@ -215,11 +218,14 @@ class AppViewModel : ViewModel() {
             "polo" -> mapOf("max" to 1, "always" to true, "type" to ItemType.Top, "sleeve" to SleeveLength.Short, "thickness" to Thickness.Normal)
             "shirt" -> mapOf("max" to 2, "always" to false, "type" to ItemType.Top, "sleeve" to SleeveLength.Long, "thickness" to Thickness.Thin)
             "knit" -> mapOf("max" to 5, "always" to false, "type" to ItemType.Top, "sleeve" to SleeveLength.Long, "thickness" to Thickness.Thick)
+            "sweatshirt" -> mapOf("max" to 3, "always" to false, "type" to ItemType.Top, "sleeve" to SleeveLength.Long, "thickness" to Thickness.Thick)
             "hoodie" -> mapOf("max" to 3, "always" to false, "type" to ItemType.Top, "sleeve" to SleeveLength.Long, "thickness" to Thickness.Thick)
             "denim" -> mapOf("max" to 10, "always" to false, "type" to ItemType.Bottom, "sleeve" to SleeveLength.Long, "thickness" to Thickness.Thick)
             "slacks" -> mapOf("max" to 3, "always" to false, "type" to ItemType.Bottom, "sleeve" to SleeveLength.Long, "thickness" to Thickness.Normal)
             "chino" -> mapOf("max" to 5, "always" to false, "type" to ItemType.Bottom, "sleeve" to SleeveLength.Long, "thickness" to Thickness.Normal)
             "jacket" -> mapOf("max" to 5, "always" to false, "type" to ItemType.Outer, "sleeve" to SleeveLength.Long, "thickness" to Thickness.Normal)
+            "windbreaker" -> mapOf("max" to 4, "always" to false, "type" to ItemType.Outer, "sleeve" to SleeveLength.Long, "thickness" to Thickness.Thin)
+            "down" -> mapOf("max" to 6, "always" to false, "type" to ItemType.Outer, "sleeve" to SleeveLength.Long, "thickness" to Thickness.Thick)
             "coat" -> mapOf("max" to 10, "always" to false, "type" to ItemType.Outer, "sleeve" to SleeveLength.Long, "thickness" to Thickness.Thick)
             else -> mapOf("max" to 1, "always" to true, "type" to ItemType.Top, "sleeve" to SleeveLength.Short, "thickness" to Thickness.Normal)
         }
