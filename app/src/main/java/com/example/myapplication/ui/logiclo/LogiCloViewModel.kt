@@ -414,7 +414,7 @@ class LogiCloViewModel(
 
     /**
      * Calculate temperature difference from item's comfort range for sorting.
-     * Returns 0.0 if within range, absolute difference if outside range,
+     * Returns 0.0 if within range, positive if too hot, negative if too cold,
      * or Double.MAX_VALUE if comfort range is not defined.
      */
     private fun calculateTempDiff(item: UiClothingItem, currentTemp: Double): Double {
@@ -423,8 +423,8 @@ class LogiCloViewModel(
 
         return when {
             minTemp == null || maxTemp == null -> Double.MAX_VALUE // No comfort range defined - lowest priority
-            currentTemp < minTemp -> minTemp - currentTemp // Too cold (absolute difference)
-            currentTemp > maxTemp -> currentTemp - maxTemp // Too hot (absolute difference)
+            currentTemp < minTemp -> currentTemp - minTemp // Too cold (negative difference)
+            currentTemp > maxTemp -> currentTemp - maxTemp // Too hot (positive difference)
             else -> 0.0 // Within range - highest priority
         }
     }
