@@ -80,7 +80,12 @@ class LogiCloViewModel(
         viewModelScope.launch {
             try {
                 weatherRepository.observeCurrentWeather().collect { weather ->
-                    _uiState.update { it.copy(weather = weather, weatherError = null) }
+                    val errorMessage = if (weather.isError) {
+                        "ネットワークエラー: 天気データを取得できませんでした"
+                    } else {
+                        null
+                    }
+                    _uiState.update { it.copy(weather = weather, weatherError = errorMessage) }
                     _refreshSuggestion()
                 }
             } catch (e: Exception) {

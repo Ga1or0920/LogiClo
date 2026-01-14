@@ -369,7 +369,11 @@ class DashboardViewModel(
                             selectedSuggestion = selectedSuggestion,
                             isRefreshingWeather = weatherStatus.isRefreshing,
                             lastWeatherUpdatedAt = weather.updatedAt ?: weatherStatus.lastUpdated,
-                            weatherErrorMessage = weatherStatus.errorMessage,
+                            weatherErrorMessage = if (weather.isError) {
+                                UiMessage(R.string.dashboard_weather_error)
+                            } else {
+                                weatherStatus.errorMessage
+                            },
                             purchaseRecommendations = suggestionResult.recommendations,
                             totalSuggestionCount = totalSuggestionCount,
                             selectionInsights = insights,

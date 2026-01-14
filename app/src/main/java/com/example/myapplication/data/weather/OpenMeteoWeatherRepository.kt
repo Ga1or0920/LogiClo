@@ -35,9 +35,11 @@ class OpenMeteoWeatherRepository(
     override suspend fun refresh() {
         try {
             val snapshot = fetchSnapshot(coordinatesState.value)
-            state.value = snapshot
+            state.value = snapshot.copy(isError = false)
         } catch (t: Throwable) {
             Log.w(TAG, "Failed to fetch weather", t)
+            // Emit error state while preserving last known values
+            state.value = state.value.copy(isError = true)
         }
     }
 

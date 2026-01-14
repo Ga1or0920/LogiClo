@@ -10,7 +10,8 @@ data class WeatherSnapshot(
     val weatherCode: Int = 0,
     val precipitationProbability: Int = 0,
     val updatedAt: Instant? = null,
-    val casualSegmentSummaries: List<CasualForecastSegmentSummary> = emptyList()
+    val casualSegmentSummaries: List<CasualForecastSegmentSummary> = emptyList(),
+    val isError: Boolean = false
 )
 
 enum class CasualForecastDay {
